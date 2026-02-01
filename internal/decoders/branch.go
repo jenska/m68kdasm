@@ -5,17 +5,17 @@ import (
 	"fmt"
 )
 
+var branchCondNames = [...]string{
+	"T", "F", "HI", "LS", "CC", "CS", "NE", "EQ",
+	"VC", "VS", "PL", "MI", "GE", "LT", "GT", "LE",
+}
+
 func decodeBRA(data []byte, opcode uint16, inst *Instruction) error {
 	offset := 2
 	condition := (opcode >> 8) & 0x0F
-	condMap := map[uint16]string{
-		0x0: "T", 0x1: "F", 0x2: "HI", 0x3: "LS", 0x4: "CC", 0x5: "CS",
-		0x6: "NE", 0x7: "EQ", 0x8: "VC", 0x9: "VS", 0xA: "PL", 0xB: "MI",
-		0xC: "GE", 0xD: "LT", 0xE: "GT", 0xF: "LE",
-	}
-	condStr, ok := condMap[condition]
-	if !ok {
-		condStr = "?"
+	condStr := "?"
+	if condition < uint16(len(branchCondNames)) {
+		condStr = branchCondNames[condition]
 	}
 	displacement := int8(opcode & 0xFF)
 	switch displacement {
@@ -50,7 +50,7 @@ func decodeBRA(data []byte, opcode uint16, inst *Instruction) error {
 func decodeJSR(data []byte, opcode uint16, inst *Instruction) error {
 	mode := uint8((opcode >> 3) & 0x7)
 	reg := uint8(opcode & 0x7)
-	operand, extraWords, err := decodeAddressingMode(data, mode, reg)
+	operand, extraWords, err := decodeAddressingMode(data[2:], mode, reg)
 	if err != nil {
 		return err
 	}
@@ -66,7 +66,7 @@ func decodeJSR(data []byte, opcode uint16, inst *Instruction) error {
 func decodeJMP(data []byte, opcode uint16, inst *Instruction) error {
 	mode := uint8((opcode >> 3) & 0x7)
 	reg := uint8(opcode & 0x7)
-	operand, extraWords, err := decodeAddressingMode(data, mode, reg)
+	operand, extraWords, err := decodeAddressingMode(data[2:], mode, reg)
 	if err != nil {
 		return err
 	}

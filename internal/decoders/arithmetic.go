@@ -28,7 +28,7 @@ func decodeADD(data []byte, opcode uint16, inst *Instruction) error {
 	srcReg := uint8(opcode & 0x7)
 
 	offset := 2
-	srcStr, srcExtraWords, err := decodeAddressingMode(data, srcMode, srcReg)
+	srcStr, srcExtraWords, err := decodeAddressingMode(data[2:], srcMode, srcReg)
 	if err != nil {
 		return err
 	}
@@ -37,10 +37,7 @@ func decodeADD(data []byte, opcode uint16, inst *Instruction) error {
 	var dstStr string
 
 	if direction == 1 {
-		dstMode := uint8((opcode >> 6) & 0x7)
-		var dstExtra int
-		dstStr, dstExtra, _ = decodeAddressingMode(data[offset:], dstMode, dstReg)
-		offset += dstExtra * 2
+		dstStr = srcStr
 	}
 
 	inst.Mnemonic = "ADD." + sizeStr
@@ -82,7 +79,7 @@ func decodeSUB(data []byte, opcode uint16, inst *Instruction) error {
 	srcReg := uint8(opcode & 0x7)
 
 	offset := 2
-	srcStr, srcExtraWords, err := decodeAddressingMode(data, srcMode, srcReg)
+	srcStr, srcExtraWords, err := decodeAddressingMode(data[2:], srcMode, srcReg)
 	if err != nil {
 		return err
 	}
@@ -91,10 +88,7 @@ func decodeSUB(data []byte, opcode uint16, inst *Instruction) error {
 	var dstStr string
 
 	if direction == 1 {
-		dstMode := uint8((opcode >> 6) & 0x7)
-		var dstExtra int
-		dstStr, dstExtra, _ = decodeAddressingMode(data[offset:], dstMode, dstReg)
-		offset += dstExtra * 2
+		dstStr = srcStr
 	}
 
 	inst.Mnemonic = "SUB." + sizeStr

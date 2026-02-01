@@ -34,7 +34,7 @@ func decodeMOVE(data []byte, opcode uint16, inst *Instruction) error {
 	offset := 2
 
 	// Decode source addressing mode
-	srcStr, srcExtraWords, err := decodeAddressingMode(data, srcMode, srcReg)
+	srcStr, srcExtraWords, err := decodeAddressingMode(data[2:], srcMode, srcReg)
 	if err != nil {
 		return err
 	}

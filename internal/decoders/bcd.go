@@ -3,8 +3,8 @@ package decoders
 import "fmt"
 
 func decodeABCD(data []byte, opcode uint16, inst *Instruction) error {
-	srcReg := uint8((opcode >> 9) & 0x7)
-	dstReg := uint8(opcode & 0x7)
+	srcReg := uint8(opcode & 0x7)
+	dstReg := uint8((opcode >> 9) & 0x7)
 	addressingMode := (opcode >> 3) & 0x1
 	inst.Mnemonic = "ABCD"
 	if addressingMode == 0 {
@@ -20,8 +20,8 @@ func decodeABCD(data []byte, opcode uint16, inst *Instruction) error {
 }
 
 func decodeSBCD(data []byte, opcode uint16, inst *Instruction) error {
-	srcReg := uint8((opcode >> 9) & 0x7)
-	dstReg := uint8(opcode & 0x7)
+	srcReg := uint8(opcode & 0x7)
+	dstReg := uint8((opcode >> 9) & 0x7)
 	addressingMode := (opcode >> 3) & 0x1
 	inst.Mnemonic = "SBCD"
 	if addressingMode == 0 {

@@ -26,6 +26,9 @@ var OpcodeTable = []OpcodePattern{
 	// Exact matches (highest priority)
 	{Mask: 0xFFFF, Value: 0x4E71, Decoder: decodeNOP},
 	{Mask: 0xFFFF, Value: 0x4E75, Decoder: decodeRTS},
+	{Mask: 0xFFFF, Value: 0x4E72, Decoder: decodeSTOP},
+	{Mask: 0xFFFF, Value: 0x4E76, Decoder: decodeTRAPV},
+	{Mask: 0xFFF0, Value: 0x4E40, Decoder: decodeTRAP},
 
 	// Pattern matches (with bit masks)
 	{Mask: 0xFB80, Value: 0x4880, Decoder: decodeMOVEM}, // MOVEM Reg→Mem
@@ -38,8 +41,8 @@ var OpcodeTable = []OpcodePattern{
 	{Mask: 0xFF00, Value: 0x4A00, Decoder: decodeTST},  // TST
 
 	{Mask: 0xF100, Value: 0x6000, Decoder: decodeBRA}, // BRA (and conditional branches)
-	{Mask: 0xF1C0, Value: 0x4E80, Decoder: decodeJSR}, // JSR
-	{Mask: 0xF1C0, Value: 0x4EC0, Decoder: decodeJMP}, // JMP
+	{Mask: 0xFFC0, Value: 0x4E80, Decoder: decodeJSR}, // JSR
+	{Mask: 0xFFC0, Value: 0x4EC0, Decoder: decodeJMP}, // JMP
 	{Mask: 0xF1C0, Value: 0x41C0, Decoder: decodeLEA}, // LEA
 	{Mask: 0xFFC0, Value: 0x4840, Decoder: decodePEA}, // PEA
 
@@ -50,10 +53,14 @@ var OpcodeTable = []OpcodePattern{
 	{Mask: 0xF1C0, Value: 0x81C0, Decoder: decodeDIVS}, // DIVS
 
 	// Bit operations (must come before generic patterns)
-	{Mask: 0xF1C0, Value: 0x0800, Decoder: decodeBTST}, // BTST
-	{Mask: 0xF1C0, Value: 0x0840, Decoder: decodeBCHG}, // BCHG
-	{Mask: 0xF1C0, Value: 0x0880, Decoder: decodeBCLR}, // BCLR
-	{Mask: 0xF1C0, Value: 0x08C0, Decoder: decodeBSET}, // BSET
+	{Mask: 0xFFC0, Value: 0x0500, Decoder: decodeBTST}, // BTST (register)
+	{Mask: 0xFFC0, Value: 0x0800, Decoder: decodeBTST}, // BTST (immediate)
+	{Mask: 0xFFC0, Value: 0x0540, Decoder: decodeBCHG}, // BCHG (register)
+	{Mask: 0xFFC0, Value: 0x0840, Decoder: decodeBCHG}, // BCHG (immediate)
+	{Mask: 0xFFC0, Value: 0x0580, Decoder: decodeBCLR}, // BCLR (register)
+	{Mask: 0xFFC0, Value: 0x0880, Decoder: decodeBCLR}, // BCLR (immediate)
+	{Mask: 0xFFC0, Value: 0x05C0, Decoder: decodeBSET}, // BSET (register)
+	{Mask: 0xFFC0, Value: 0x08C0, Decoder: decodeBSET}, // BSET (immediate)
 
 	// BCD (Binary Coded Decimal) instructions (must come before generic AND/OR)
 	{Mask: 0xF1F0, Value: 0xC100, Decoder: decodeABCD}, // ABCD
@@ -74,6 +81,7 @@ var OpcodeTable = []OpcodePattern{
 
 	{Mask: 0xF000, Value: 0x8000, Decoder: decodeOR},  // OR
 	{Mask: 0xF000, Value: 0x9000, Decoder: decodeSUB}, // SUB
+	{Mask: 0xF100, Value: 0xB100, Decoder: decodeEOR}, // EOR
 	{Mask: 0xF000, Value: 0xB000, Decoder: decodeCMP}, // CMP
 	{Mask: 0xF000, Value: 0xC000, Decoder: decodeAND}, // AND
 	{Mask: 0xF000, Value: 0xD000, Decoder: decodeADD}, // ADD

@@ -9,7 +9,8 @@ This project provides a library and interfaces to translate m68k machine code in
 *   Disassembly of raw byte slices.
 *   Support for addressing modes and operands.
 *   Simple API for integration into emulators or tools.
-*   Unit tests based on assembler round-trips.
+*   Unit tests based on assembler round-trips and direct decoder checks.
+*   Coverage for core 68000 instructions including branches, logical/arithmetic ops, bit operations, and traps.
 
 ## Usage
 

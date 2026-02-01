@@ -6,7 +6,7 @@ func decodeMULU(data []byte, opcode uint16, inst *Instruction) error {
 	dstReg := uint8((opcode >> 9) & 0x7)
 	srcMode := uint8((opcode >> 3) & 0x7)
 	srcReg := uint8(opcode & 0x7)
-	srcStr, srcExtraWords, err := decodeAddressingMode(data, srcMode, srcReg)
+	srcStr, srcExtraWords, err := decodeAddressingMode(data[2:], srcMode, srcReg)
 	if err != nil {
 		return err
 	}
@@ -23,7 +23,7 @@ func decodeMULS(data []byte, opcode uint16, inst *Instruction) error {
 	dstReg := uint8((opcode >> 9) & 0x7)
 	srcMode := uint8((opcode >> 3) & 0x7)
 	srcReg := uint8(opcode & 0x7)
-	srcStr, srcExtraWords, err := decodeAddressingMode(data, srcMode, srcReg)
+	srcStr, srcExtraWords, err := decodeAddressingMode(data[2:], srcMode, srcReg)
 	if err != nil {
 		return err
 	}
@@ -40,7 +40,7 @@ func decodeDIVU(data []byte, opcode uint16, inst *Instruction) error {
 	dstReg := uint8((opcode >> 9) & 0x7)
 	srcMode := uint8((opcode >> 3) & 0x7)
 	srcReg := uint8(opcode & 0x7)
-	srcStr, srcExtraWords, err := decodeAddressingMode(data, srcMode, srcReg)
+	srcStr, srcExtraWords, err := decodeAddressingMode(data[2:], srcMode, srcReg)
 	if err != nil {
 		return err
 	}
@@ -57,7 +57,7 @@ func decodeDIVS(data []byte, opcode uint16, inst *Instruction) error {
 	dstReg := uint8((opcode >> 9) & 0x7)
 	srcMode := uint8((opcode >> 3) & 0x7)
 	srcReg := uint8(opcode & 0x7)
-	srcStr, srcExtraWords, err := decodeAddressingMode(data, srcMode, srcReg)
+	srcStr, srcExtraWords, err := decodeAddressingMode(data[2:], srcMode, srcReg)
 	if err != nil {
 		return err
 	}

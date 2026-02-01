@@ -12,7 +12,7 @@ func decodeCMP(data []byte, opcode uint16, inst *Instruction) error {
 	srcMode := uint8((opcode >> 3) & 0x7)
 	srcReg := uint8(opcode & 0x7)
 	offset := 2
-	srcStr, srcExtraWords, err := decodeAddressingMode(data, srcMode, srcReg)
+	srcStr, srcExtraWords, err := decodeAddressingMode(data[2:], srcMode, srcReg)
 	if err != nil {
 		return err
 	}

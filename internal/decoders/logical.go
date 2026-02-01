@@ -13,7 +13,7 @@ func decodeAND(data []byte, opcode uint16, inst *Instruction) error {
 	srcMode := uint8((opcode >> 3) & 0x7)
 	srcReg := uint8(opcode & 0x7)
 	offset := 2
-	srcStr, srcExtra, err := decodeAddressingMode(data, srcMode, srcReg)
+	srcStr, srcExtra, err := decodeAddressingMode(data[2:], srcMode, srcReg)
 	if err != nil {
 		return err
 	}
@@ -22,10 +22,7 @@ func decodeAND(data []byte, opcode uint16, inst *Instruction) error {
 	if direction == 0 {
 		inst.Operands = fmt.Sprintf("%s, D%d", srcStr, dstReg)
 	} else {
-		dstMode := uint8((opcode >> 6) & 0x7)
-		dstStr, dstExtra, _ := decodeAddressingMode(data[offset:], dstMode, dstReg)
-		offset += dstExtra * 2
-		inst.Operands = fmt.Sprintf("D%d, %s", dstReg, dstStr)
+		inst.Operands = fmt.Sprintf("D%d, %s", dstReg, srcStr)
 	}
 	inst.Size = uint32(offset)
 	if len(data) >= offset {
@@ -42,7 +39,7 @@ func decodeOR(data []byte, opcode uint16, inst *Instruction) error {
 	srcMode := uint8((opcode >> 3) & 0x7)
 	srcReg := uint8(opcode & 0x7)
 	offset := 2
-	srcStr, srcExtra, err := decodeAddressingMode(data, srcMode, srcReg)
+	srcStr, srcExtra, err := decodeAddressingMode(data[2:], srcMode, srcReg)
 	if err != nil {
 		return err
 	}
@@ -51,11 +48,29 @@ func decodeOR(data []byte, opcode uint16, inst *Instruction) error {
 	if direction == 0 {
 		inst.Operands = fmt.Sprintf("%s, D%d", srcStr, dstReg)
 	} else {
-		dstMode := uint8((opcode >> 6) & 0x7)
-		dstStr, dstExtra, _ := decodeAddressingMode(data[offset:], dstMode, dstReg)
-		offset += dstExtra * 2
-		inst.Operands = fmt.Sprintf("D%d, %s", dstReg, dstStr)
+		inst.Operands = fmt.Sprintf("D%d, %s", dstReg, srcStr)
 	}
+	inst.Size = uint32(offset)
+	if len(data) >= offset {
+		inst.Bytes = data[:offset]
+	}
+	return nil
+}
+
+func decodeEOR(data []byte, opcode uint16, inst *Instruction) error {
+	size := (opcode >> 6) & 0x3
+	sizeStr := []string{"B", "W", "L", "?"}[size]
+	srcReg := uint8((opcode >> 9) & 0x7)
+	dstMode := uint8((opcode >> 3) & 0x7)
+	dstReg := uint8(opcode & 0x7)
+	offset := 2
+	dstStr, dstExtra, err := decodeAddressingMode(data[2:], dstMode, dstReg)
+	if err != nil {
+		return err
+	}
+	offset += dstExtra * 2
+	inst.Mnemonic = "EOR." + sizeStr
+	inst.Operands = fmt.Sprintf("D%d, %s", srcReg, dstStr)
 	inst.Size = uint32(offset)
 	if len(data) >= offset {
 		inst.Bytes = data[:offset]

@@ -44,7 +44,7 @@ func decodeAddressingMode(data []byte, mode, reg uint8) (string, int, error) {
 			indexReg -= 8
 		}
 		displacement := int8(indexWord & 0xFF)
-		return fmt.Sprintf("(%d,%s%d.L)", displacement, indexType, indexReg), 1, nil
+		return fmt.Sprintf("(%d,A%d,%s%d.L)", displacement, reg, indexType, indexReg), 1, nil
 
 	case 7:
 		// Special cases based on register field
@@ -82,7 +82,7 @@ func decodeAddressingMode(data []byte, mode, reg uint8) (string, int, error) {
 				indexReg -= 8
 			}
 			displacement := int8(indexWord & 0xFF)
-			return fmt.Sprintf("(%d,%s%d.L,PC)", displacement, indexType, indexReg), 1, nil
+			return fmt.Sprintf("(%d,PC,%s%d.L)", displacement, indexType, indexReg), 1, nil
 
 		case 4: // Immediate Data
 			if len(data) < 2 {
