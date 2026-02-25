@@ -10,7 +10,7 @@ var branchCondNames = [...]string{
 	"VC", "VS", "PL", "MI", "GE", "LT", "GT", "LE",
 }
 
-func decodeBRA(data []byte, opcode uint16, inst *Instruction) error {
+func decodeBxx(data []byte, opcode uint16, inst *Instruction) error {
 	offset := 2
 	condition := (opcode >> 8) & 0x0F
 	condStr := "?"

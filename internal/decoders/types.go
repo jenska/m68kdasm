@@ -40,7 +40,7 @@ var OpcodeTable = []OpcodePattern{
 	{Mask: 0xFF00, Value: 0x4600, Decoder: decodeNOT},  // NOT
 	{Mask: 0xFF00, Value: 0x4A00, Decoder: decodeTST},  // TST
 
-	{Mask: 0xF100, Value: 0x6000, Decoder: decodeBRA}, // BRA (and conditional branches)
+	{Mask: 0xF100, Value: 0x6000, Decoder: decodeBxx}, // BRA (and conditional branches)
 	{Mask: 0xFFC0, Value: 0x4E80, Decoder: decodeJSR}, // JSR
 	{Mask: 0xFFC0, Value: 0x4EC0, Decoder: decodeJMP}, // JMP
 	{Mask: 0xF1C0, Value: 0x41C0, Decoder: decodeLEA}, // LEA

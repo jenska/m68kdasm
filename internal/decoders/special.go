@@ -38,43 +38,6 @@ func decodePEA(data []byte, opcode uint16, inst *Instruction) error {
 	return nil
 }
 
-func decodeMOVEM(data []byte, opcode uint16, inst *Instruction) error {
-	if len(data) < 4 {
-		return fmt.Errorf("insufficient data for MOVEM")
-	}
-	direction := (opcode >> 10) & 0x1
-	sizeStr := "W"
-	if opcode&0x0040 != 0 {
-		sizeStr = "L"
-	}
-	mode := uint8((opcode >> 3) & 0x7)
-	reg := uint8(opcode & 0x7)
-	regListMask := binary.BigEndian.Uint16(data[2:4])
-	offset := 4
-	var addrModeStr string
-	var extraWords int
-	var err error
-	if mode != 0 || reg != 0 {
-		addrModeStr, extraWords, err = decodeAddressingMode(data[offset:], mode, reg)
-		if err != nil {
-			return err
-		}
-		offset += extraWords * 2
-	}
-	inst.Mnemonic = "MOVEM." + sizeStr
-	regList := formatRegisterList(regListMask, direction)
-	if direction == 0 {
-		inst.Operands = fmt.Sprintf("%s, %s", regList, addrModeStr)
-	} else {
-		inst.Operands = fmt.Sprintf("%s, %s", addrModeStr, regList)
-	}
-	inst.Size = uint32(offset)
-	if len(data) >= offset {
-		inst.Bytes = data[:offset]
-	}
-	return nil
-}
-
 func decodeSTOP(data []byte, opcode uint16, inst *Instruction) error {
 	if len(data) < 4 {
 		return fmt.Errorf("insufficient data for STOP")

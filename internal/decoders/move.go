@@ -1,8 +1,22 @@
 package decoders
 
 import (
+	"encoding/binary"
 	"fmt"
 )
+
+func decodeMOVEQ(data []byte, opcode uint16, inst *Instruction) error {
+	dstReg := uint8((opcode >> 9) & 0x7)
+	immediate := int8(opcode & 0xFF)
+	inst.Mnemonic = "MOVEQ"
+	immStr := formatImmediateForMOVEQ(int32(immediate))
+	inst.Operands = fmt.Sprintf("#%s, D%d", immStr, dstReg)
+	inst.Size = 2
+	if len(data) >= 2 {
+		inst.Bytes = data[:2]
+	}
+	return nil
+}
 
 // decodeMOVE - Move data
 // MOVE Format: 00ss ddd mmm rrr (source and destination can use all addressing modes)
@@ -54,5 +68,42 @@ func decodeMOVE(data []byte, opcode uint16, inst *Instruction) error {
 		inst.Bytes = data[:offset]
 	}
 
+	return nil
+}
+
+func decodeMOVEM(data []byte, opcode uint16, inst *Instruction) error {
+	if len(data) < 4 {
+		return fmt.Errorf("insufficient data for MOVEM")
+	}
+	direction := (opcode >> 10) & 0x1
+	sizeStr := "W"
+	if opcode&0x0040 != 0 {
+		sizeStr = "L"
+	}
+	mode := uint8((opcode >> 3) & 0x7)
+	reg := uint8(opcode & 0x7)
+	regListMask := binary.BigEndian.Uint16(data[2:4])
+	offset := 4
+	var addrModeStr string
+	var extraWords int
+	var err error
+	if mode != 0 || reg != 0 {
+		addrModeStr, extraWords, err = decodeAddressingMode(data[offset:], mode, reg)
+		if err != nil {
+			return err
+		}
+		offset += extraWords * 2
+	}
+	inst.Mnemonic = "MOVEM." + sizeStr
+	regList := formatRegisterList(regListMask, direction)
+	if direction == 0 {
+		inst.Operands = fmt.Sprintf("%s, %s", regList, addrModeStr)
+	} else {
+		inst.Operands = fmt.Sprintf("%s, %s", addrModeStr, regList)
+	}
+	inst.Size = uint32(offset)
+	if len(data) >= offset {
+		inst.Bytes = data[:offset]
+	}
 	return nil
 }
