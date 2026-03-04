@@ -10,19 +10,7 @@ import (
 func decodeADD(data []byte, opcode uint16, inst *Instruction) error {
 	direction := (opcode >> 8) & 0x1
 	size := (opcode >> 6) & 0x3
-
-	sizeStr := "?"
-	switch size {
-	case 0:
-		sizeStr = "B"
-	case 1:
-		sizeStr = "W"
-	case 2:
-		sizeStr = "L"
-	default:
-		return fmt.Errorf("unbekannte ADD-Größe: %d", size)
-	}
-
+	sizeStr := getSizeString(size)
 	dstReg := uint8((opcode >> 9) & 0x7)
 	srcMode := uint8((opcode >> 3) & 0x7)
 	srcReg := uint8(opcode & 0x7)
@@ -34,24 +22,9 @@ func decodeADD(data []byte, opcode uint16, inst *Instruction) error {
 	}
 	offset += srcExtraWords * 2
 
-	var dstStr string
-
-	if direction == 1 {
-		dstStr = srcStr
-	}
-
 	inst.Mnemonic = "ADD." + sizeStr
-
-	if direction == 0 {
-		inst.Operands = fmt.Sprintf("%s, D%d", srcStr, dstReg)
-	} else {
-		inst.Operands = fmt.Sprintf("D%d, %s", dstReg, dstStr)
-	}
-
-	inst.Size = uint32(offset)
-	if len(data) >= offset {
-		inst.Bytes = data[:offset]
-	}
+	inst.Operands = buildDirectedOperands(direction, srcStr, dstReg)
+	setInstructionSize(data, inst, offset)
 
 	return nil
 }
@@ -61,19 +34,7 @@ func decodeADD(data []byte, opcode uint16, inst *Instruction) error {
 func decodeSUB(data []byte, opcode uint16, inst *Instruction) error {
 	direction := (opcode >> 8) & 0x1
 	size := (opcode >> 6) & 0x3
-
-	sizeStr := "?"
-	switch size {
-	case 0:
-		sizeStr = "B"
-	case 1:
-		sizeStr = "W"
-	case 2:
-		sizeStr = "L"
-	default:
-		return fmt.Errorf("unbekannte SUB-Größe: %d", size)
-	}
-
+	sizeStr := getSizeString(size)
 	dstReg := uint8((opcode >> 9) & 0x7)
 	srcMode := uint8((opcode >> 3) & 0x7)
 	srcReg := uint8(opcode & 0x7)
@@ -85,24 +46,9 @@ func decodeSUB(data []byte, opcode uint16, inst *Instruction) error {
 	}
 	offset += srcExtraWords * 2
 
-	var dstStr string
-
-	if direction == 1 {
-		dstStr = srcStr
-	}
-
 	inst.Mnemonic = "SUB." + sizeStr
-
-	if direction == 0 {
-		inst.Operands = fmt.Sprintf("%s, D%d", srcStr, dstReg)
-	} else {
-		inst.Operands = fmt.Sprintf("D%d, %s", dstReg, dstStr)
-	}
-
-	inst.Size = uint32(offset)
-	if len(data) >= offset {
-		inst.Bytes = data[:offset]
-	}
+	inst.Operands = buildDirectedOperands(direction, srcStr, dstReg)
+	setInstructionSize(data, inst, offset)
 
 	return nil
 }

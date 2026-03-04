@@ -7,7 +7,7 @@ import (
 
 func decodeCMP(data []byte, opcode uint16, inst *Instruction) error {
 	size := (opcode >> 6) & 0x3
-	sizeStr := []string{"B", "W", "L", "?"}[size]
+	sizeStr := getSizeString(size)
 	dstReg := uint8((opcode >> 9) & 0x7)
 	srcMode := uint8((opcode >> 3) & 0x7)
 	srcReg := uint8(opcode & 0x7)
@@ -19,16 +19,13 @@ func decodeCMP(data []byte, opcode uint16, inst *Instruction) error {
 	offset += srcExtraWords * 2
 	inst.Mnemonic = "CMP." + sizeStr
 	inst.Operands = fmt.Sprintf("%s, D%d", srcStr, dstReg)
-	inst.Size = uint32(offset)
-	if len(data) >= offset {
-		inst.Bytes = data[:offset]
-	}
+	setInstructionSize(data, inst, offset)
 	return nil
 }
 
 func decodeCMPI(data []byte, opcode uint16, inst *Instruction) error {
 	size := (opcode >> 6) & 0x3
-	sizeStr := []string{"B", "W", "L", "?"}[size]
+	sizeStr := getSizeString(size)
 	dstMode := uint8((opcode >> 3) & 0x7)
 	dstReg := uint8(opcode & 0x7)
 	offset := 2
@@ -45,9 +42,6 @@ func decodeCMPI(data []byte, opcode uint16, inst *Instruction) error {
 	inst.Mnemonic = "CMPI." + sizeStr
 	immStr := formatImmediate(immediate, 2)
 	inst.Operands = fmt.Sprintf("#%s, %s", immStr, dstOperand)
-	inst.Size = uint32(offset)
-	if len(data) >= offset {
-		inst.Bytes = data[:offset]
-	}
+	setInstructionSize(data, inst, offset)
 	return nil
 }

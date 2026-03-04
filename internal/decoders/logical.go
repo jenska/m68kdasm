@@ -31,12 +31,12 @@ func decodeEORI(data []byte, opcode uint16, inst *Instruction) error {
 
 func decodeLogicalI(mn string, data []byte, opcode uint16, inst *Instruction) error {
 	size := (opcode >> 6) & 0x3
-	sizeStr := []string{".B", ".W", ".L", "?"}[size]
+	sizeStr := "." + getSizeString(size)
 	dstMode := uint8((opcode >> 3) & 0x7)
 	dstReg := uint8(opcode & 0x7)
 	offset := 2
 	if len(data) < offset+2 {
-		return fmt.Errorf("insufficient data for EORI")
+		return fmt.Errorf("insufficient data for " + mn)
 	}
 	immediate := uint32(binary.BigEndian.Uint16(data[offset : offset+2]))
 	offset += 2
@@ -48,17 +48,14 @@ func decodeLogicalI(mn string, data []byte, opcode uint16, inst *Instruction) er
 	inst.Mnemonic = mn + sizeStr
 	immStr := formatImmediate(immediate, 2)
 	inst.Operands = fmt.Sprintf("#%s, %s", immStr, dstOperand)
-	inst.Size = uint32(offset)
-	if len(data) >= offset {
-		inst.Bytes = data[:offset]
-	}
+	setInstructionSize(data, inst, offset)
 	return nil
 }
 
 func decodeLogical(mn string, data []byte, opcode uint16, inst *Instruction) error {
 	direction := (opcode >> 8) & 0x1
 	size := (opcode >> 6) & 0x3
-	sizeStr := []string{".B", ".W", ".L", "?"}[size]
+	sizeStr := "." + getSizeString(size)
 	dstReg := uint8((opcode >> 9) & 0x7)
 	srcMode := uint8((opcode >> 3) & 0x7)
 	srcReg := uint8(opcode & 0x7)
@@ -69,14 +66,7 @@ func decodeLogical(mn string, data []byte, opcode uint16, inst *Instruction) err
 	}
 	offset += srcExtra * 2
 	inst.Mnemonic = mn + sizeStr
-	if direction == 0 {
-		inst.Operands = fmt.Sprintf("%s, D%d", srcStr, dstReg)
-	} else {
-		inst.Operands = fmt.Sprintf("D%d, %s", dstReg, srcStr)
-	}
-	inst.Size = uint32(offset)
-	if len(data) >= offset {
-		inst.Bytes = data[:offset]
-	}
+	inst.Operands = buildDirectedOperands(direction, srcStr, dstReg)
+	setInstructionSize(data, inst, offset)
 	return nil
 }

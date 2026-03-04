@@ -62,6 +62,7 @@ func TestDisassembleRoundTrip(t *testing.T) {
 		"MOVE.W $00123456, D1",
 		"MOVE.W (16,PC), D1",
 		"MOVE.W (4,PC,D1.L), D1",
+		"MOVE.W (4,PC,D1.W), D1",
 		"MOVE.W #$1234, D1",
 	}
 

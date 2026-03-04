@@ -33,18 +33,11 @@ func decodeAddressingMode(data []byte, mode, reg uint8) (string, int, error) {
 
 	case 6: // Address Register Indirect with Index
 		if len(data) < 2 {
-			return "", 0, fmt.Errorf("nicht genügend Daten für Index")
+			return "", 0, fmt.Errorf("insufficient data for index")
 		}
-		// Format: Xn (2-bit index scale, 4-bit index register, sign bit, size bit, 8-bit displacement)
 		indexWord := binary.BigEndian.Uint16(data[:2])
-		indexReg := (indexWord >> 12) & 0xF
-		indexType := "D"
-		if indexReg >= 8 {
-			indexType = "A"
-			indexReg -= 8
-		}
-		displacement := int8(indexWord & 0xFF)
-		return fmt.Sprintf("(%d,A%d,%s%d.L)", displacement, reg, indexType, indexReg), 1, nil
+		indexType, indexReg, indexSize, displacement := decodeIndexWord(indexWord)
+		return fmt.Sprintf("(%d,A%d,%s%d.%c)", displacement, reg, indexType, indexReg, indexSize), 1, nil
 
 	case 7:
 		// Special cases based on register field
@@ -72,17 +65,11 @@ func decodeAddressingMode(data []byte, mode, reg uint8) (string, int, error) {
 
 		case 3: // Program Counter with Index
 			if len(data) < 2 {
-				return "", 0, fmt.Errorf("nicht genügend Daten für PC Index")
+				return "", 0, fmt.Errorf("insufficient data for PC index")
 			}
 			indexWord := binary.BigEndian.Uint16(data[:2])
-			indexReg := (indexWord >> 12) & 0xF
-			indexType := "D"
-			if indexReg >= 8 {
-				indexType = "A"
-				indexReg -= 8
-			}
-			displacement := int8(indexWord & 0xFF)
-			return fmt.Sprintf("(%d,PC,%s%d.L)", displacement, indexType, indexReg), 1, nil
+			indexType, indexReg, indexSize, displacement := decodeIndexWord(indexWord)
+			return fmt.Sprintf("(%d,PC,%s%d.%c)", displacement, indexType, indexReg, indexSize), 1, nil
 
 		case 4: // Immediate Data
 			if len(data) < 2 {
@@ -130,4 +117,20 @@ func formatImmediateForMOVEQ(value int32) string {
 		return fmt.Sprintf("%d", value)
 	}
 	return fmt.Sprintf("$%X", value)
+}
+
+// decodeIndexWord extracts index register, type, size, and displacement from index word
+func decodeIndexWord(indexWord uint16) (indexType string, indexReg, indexSize uint8, displacement int8) {
+	indexType = "D"
+	if (indexWord>>15)&0x1 == 1 {
+		indexType = "A"
+	}
+	indexReg = uint8((indexWord >> 12) & 0x7)
+	if (indexWord>>11)&0x1 == 1 {
+		indexSize = 'L'
+	} else {
+		indexSize = 'W'
+	}
+	displacement = int8(indexWord & 0xFF)
+	return
 }
