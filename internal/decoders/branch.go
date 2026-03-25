@@ -25,24 +25,17 @@ func decodeBxx(data []byte, opcode uint16, inst *Instruction) error {
 		}
 		displacement16 := int16(binary.BigEndian.Uint16(data[offset : offset+2]))
 		offset += 2
-		inst.Mnemonic = fmt.Sprintf("B%s.W", condStr)
-		inst.Operands = fmt.Sprintf("$%04X", uint16(int32(displacement16)+int32(offset)-2))
+		setInstruction(data, inst, offset, fmt.Sprintf("B%s.W", condStr), fmt.Sprintf("$%04X", uint16(int32(displacement16)+int32(offset)-2)))
 	case -1:
 		if len(data) < offset+4 {
 			return fmt.Errorf("insufficient data for B%s.L", condStr)
 		}
 		displacement32 := int32(binary.BigEndian.Uint32(data[offset : offset+4]))
 		offset += 4
-		inst.Mnemonic = fmt.Sprintf("B%s.L", condStr)
-		inst.Operands = fmt.Sprintf("$%08X", uint32(displacement32+int32(offset)-4))
+		setInstruction(data, inst, offset, fmt.Sprintf("B%s.L", condStr), fmt.Sprintf("$%08X", uint32(displacement32+int32(offset)-4)))
 	default:
-		inst.Mnemonic = fmt.Sprintf("B%s.S", condStr)
 		targetAddr := int32(displacement) + int32(offset)
-		inst.Operands = fmt.Sprintf("$%04X", uint16(targetAddr))
-	}
-	inst.Size = uint32(offset)
-	if len(data) >= offset {
-		inst.Bytes = data[:offset]
+		setInstruction(data, inst, offset, fmt.Sprintf("B%s.S", condStr), fmt.Sprintf("$%04X", uint16(targetAddr)))
 	}
 	return nil
 }
@@ -50,31 +43,21 @@ func decodeBxx(data []byte, opcode uint16, inst *Instruction) error {
 func decodeJSR(data []byte, opcode uint16, inst *Instruction) error {
 	mode := uint8((opcode >> 3) & 0x7)
 	reg := uint8(opcode & 0x7)
-	operand, extraWords, err := decodeAddressingMode(data[2:], mode, reg)
+	operand, offset, err := decodeEA(data, 2, mode, reg)
 	if err != nil {
 		return err
 	}
-	inst.Mnemonic = "JSR"
-	inst.Operands = operand
-	inst.Size = uint32(2 + extraWords*2)
-	if len(data) >= int(inst.Size) {
-		inst.Bytes = data[:inst.Size]
-	}
+	setInstruction(data, inst, offset, "JSR", operand)
 	return nil
 }
 
 func decodeJMP(data []byte, opcode uint16, inst *Instruction) error {
 	mode := uint8((opcode >> 3) & 0x7)
 	reg := uint8(opcode & 0x7)
-	operand, extraWords, err := decodeAddressingMode(data[2:], mode, reg)
+	operand, offset, err := decodeEA(data, 2, mode, reg)
 	if err != nil {
 		return err
 	}
-	inst.Mnemonic = "JMP"
-	inst.Operands = operand
-	inst.Size = uint32(2 + extraWords*2)
-	if len(data) >= int(inst.Size) {
-		inst.Bytes = data[:inst.Size]
-	}
+	setInstruction(data, inst, offset, "JMP", operand)
 	return nil
 }

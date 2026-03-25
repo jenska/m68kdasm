@@ -1,47 +1,36 @@
 package decoders
 
-import (
-	"encoding/binary"
-	"fmt"
-)
+import "fmt"
 
 func decodeCMP(data []byte, opcode uint16, inst *Instruction) error {
-	size := (opcode >> 6) & 0x3
-	sizeStr := getSizeString(size)
+	sizeStr := getSizeString((opcode >> 6) & 0x3)
 	dstReg := uint8((opcode >> 9) & 0x7)
 	srcMode := uint8((opcode >> 3) & 0x7)
 	srcReg := uint8(opcode & 0x7)
-	offset := 2
-	srcStr, srcExtraWords, err := decodeAddressingMode(data[2:], srcMode, srcReg)
+
+	srcStr, offset, err := decodeEA(data, 2, srcMode, srcReg)
 	if err != nil {
 		return err
 	}
-	offset += srcExtraWords * 2
-	inst.Mnemonic = "CMP." + sizeStr
-	inst.Operands = fmt.Sprintf("%s, D%d", srcStr, dstReg)
-	setInstructionSize(data, inst, offset)
+	setInstruction(data, inst, offset, "CMP."+sizeStr, fmt.Sprintf("%s, D%d", srcStr, dstReg))
 	return nil
 }
 
 func decodeCMPI(data []byte, opcode uint16, inst *Instruction) error {
-	size := (opcode >> 6) & 0x3
-	sizeStr := getSizeString(size)
-	dstMode := uint8((opcode >> 3) & 0x7)
-	dstReg := uint8(opcode & 0x7)
-	offset := 2
-	if len(data) < offset+2 {
-		return fmt.Errorf("insufficient data for CMPI")
-	}
-	immediate := uint32(binary.BigEndian.Uint16(data[offset : offset+2]))
-	offset += 2
-	dstOperand, extraWords, err := decodeAddressingMode(data[offset:], dstMode, dstReg)
+	sizeStr, immSize, err := immediateSpec((opcode>>6)&0x3, false, "CMPI")
 	if err != nil {
 		return err
 	}
-	offset += extraWords * 2
-	inst.Mnemonic = "CMPI." + sizeStr
-	immStr := formatImmediate(immediate, 2)
-	inst.Operands = fmt.Sprintf("#%s, %s", immStr, dstOperand)
-	setInstructionSize(data, inst, offset)
+	dstMode := uint8((opcode >> 3) & 0x7)
+	dstReg := uint8(opcode & 0x7)
+	immediate, offset, err := readImmediate(data, 2, immSize, "CMPI")
+	if err != nil {
+		return err
+	}
+	dstOperand, offset, err := decodeEA(data, offset, dstMode, dstReg)
+	if err != nil {
+		return err
+	}
+	setInstruction(data, inst, offset, "CMPI."+sizeStr, fmt.Sprintf("#%s, %s", formatImmediate(immediate, immSize), dstOperand))
 	return nil
 }

@@ -21,19 +21,13 @@ func decodeTST(data []byte, opcode uint16, inst *Instruction) error {
 }
 
 func decodeSingleOp(data []byte, opcode uint16, inst *Instruction, mnemonic string) error {
-	size := (opcode >> 6) & 0x3
-	sizeStr := []string{"B", "W", "L", "?"}[size]
+	sizeStr := getSizeString((opcode >> 6) & 0x3)
 	mode := uint8((opcode >> 3) & 0x7)
 	reg := uint8(opcode & 0x7)
-	operand, extraWords, err := decodeAddressingMode(data[2:], mode, reg)
+	operand, offset, err := decodeEA(data, 2, mode, reg)
 	if err != nil {
 		return err
 	}
-	inst.Mnemonic = mnemonic + "." + sizeStr
-	inst.Operands = operand
-	inst.Size = uint32(2 + extraWords*2)
-	if len(data) >= int(inst.Size) {
-		inst.Bytes = data[:inst.Size]
-	}
+	setInstruction(data, inst, offset, mnemonic+"."+sizeStr, operand)
 	return nil
 }

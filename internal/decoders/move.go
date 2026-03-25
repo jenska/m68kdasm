@@ -8,13 +8,7 @@ import (
 func decodeMOVEQ(data []byte, opcode uint16, inst *Instruction) error {
 	dstReg := uint8((opcode >> 9) & 0x7)
 	immediate := int8(opcode & 0xFF)
-	inst.Mnemonic = "MOVEQ"
-	immStr := formatImmediateForMOVEQ(int32(immediate))
-	inst.Operands = fmt.Sprintf("#%s, D%d", immStr, dstReg)
-	inst.Size = 2
-	if len(data) >= 2 {
-		inst.Bytes = data[:2]
-	}
+	setInstruction(data, inst, 2, "MOVEQ", fmt.Sprintf("#%s, D%d", formatImmediateForMOVEQ(int32(immediate)), dstReg))
 	return nil
 }
 
@@ -48,25 +42,18 @@ func decodeMOVE(data []byte, opcode uint16, inst *Instruction) error {
 	offset := 2
 
 	// Decode source addressing mode
-	srcStr, srcExtraWords, err := decodeAddressingMode(data[2:], srcMode, srcReg)
+	srcStr, offset, err := decodeEA(data, offset, srcMode, srcReg)
 	if err != nil {
 		return err
 	}
-	offset += srcExtraWords * 2
 
 	// Decode destination addressing mode
-	dstStr, dstExtraWords, err := decodeAddressingMode(data[offset:], dstMode, dstReg)
+	dstStr, offset, err := decodeEA(data, offset, dstMode, dstReg)
 	if err != nil {
 		return err
 	}
-	offset += dstExtraWords * 2
 
-	inst.Mnemonic = "MOVE." + sizeStr
-	inst.Operands = fmt.Sprintf("%s, %s", srcStr, dstStr)
-	inst.Size = uint32(offset)
-	if len(data) >= offset {
-		inst.Bytes = data[:offset]
-	}
+	setInstruction(data, inst, offset, "MOVE."+sizeStr, fmt.Sprintf("%s, %s", srcStr, dstStr))
 
 	return nil
 }
@@ -85,25 +72,18 @@ func decodeMOVEM(data []byte, opcode uint16, inst *Instruction) error {
 	regListMask := binary.BigEndian.Uint16(data[2:4])
 	offset := 4
 	var addrModeStr string
-	var extraWords int
 	var err error
 	if mode != 0 || reg != 0 {
-		addrModeStr, extraWords, err = decodeAddressingMode(data[offset:], mode, reg)
+		addrModeStr, offset, err = decodeEA(data, offset, mode, reg)
 		if err != nil {
 			return err
 		}
-		offset += extraWords * 2
 	}
-	inst.Mnemonic = "MOVEM." + sizeStr
 	regList := formatRegisterList(regListMask, direction)
 	if direction == 0 {
-		inst.Operands = fmt.Sprintf("%s, %s", regList, addrModeStr)
-	} else {
-		inst.Operands = fmt.Sprintf("%s, %s", addrModeStr, regList)
+		setInstruction(data, inst, offset, "MOVEM."+sizeStr, fmt.Sprintf("%s, %s", regList, addrModeStr))
+		return nil
 	}
-	inst.Size = uint32(offset)
-	if len(data) >= offset {
-		inst.Bytes = data[:offset]
-	}
+	setInstruction(data, inst, offset, "MOVEM."+sizeStr, fmt.Sprintf("%s, %s", addrModeStr, regList))
 	return nil
 }

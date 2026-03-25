@@ -37,16 +37,10 @@ func decodeBitset(mn string, data []byte, opcode uint16, inst *Instruction) erro
 		bitNumStr = fmt.Sprintf("#%d", bitNum&0xFF)
 		offset += 2
 	}
-	operand, extraWords, err := decodeAddressingMode(data[offset:], mode, reg)
+	operand, offset, err := decodeEA(data, offset, mode, reg)
 	if err != nil {
 		return err
 	}
-	offset += extraWords * 2
-	inst.Mnemonic = mn
-	inst.Operands = fmt.Sprintf("%s, %s", bitNumStr, operand)
-	inst.Size = uint32(offset)
-	if len(data) >= offset {
-		inst.Bytes = data[:offset]
-	}
+	setInstruction(data, inst, offset, mn, fmt.Sprintf("%s, %s", bitNumStr, operand))
 	return nil
 }

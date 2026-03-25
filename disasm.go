@@ -33,47 +33,43 @@ func (i Instruction) String() string {
 // Decode liest eine einzelne Instruktion an der gegebenen Adresse aus dem Byte-Slice.
 func Decode(data []byte, address uint32) (*Instruction, error) {
 	if len(data) < 2 {
-		return nil, fmt.Errorf("nicht genügend Daten für Opcode an Adresse %08X", address)
+		return nil, fmt.Errorf("insufficient data for opcode at address %08X", address)
 	}
 
 	// 68000 ist Big Endian
 	opcode := binary.BigEndian.Uint16(data)
 
-	inst := &Instruction{
-		Address: address,
-		Opcode:  opcode,
-		Size:    2, // Minimale Größe ist ein Word (2 Bytes)
-		Bytes:   data[:2],
-	}
-
-	// Convert decoder.Instruction to local Instruction
-	decoderInst := &decoders.Instruction{
-		Address: address,
-		Opcode:  opcode,
-		Size:    2,
-		Bytes:   data[:2],
-	}
-
-	// Jump-Table durchsuchen
-	for _, pattern := range decoders.OpcodeTable {
-		if (opcode & pattern.Mask) == pattern.Value {
-			if err := pattern.Decoder(data, opcode, decoderInst); err != nil {
-				return nil, err
-			}
-			// Copy results back
-			inst.Mnemonic = decoderInst.Mnemonic
-			inst.Operands = decoderInst.Operands
-			inst.Size = decoderInst.Size
-			inst.Bytes = decoderInst.Bytes
-			return inst, nil
+	// Use hierarchical jump table for efficient decoder lookup
+	decoder := decoders.FindDecoder(opcode)
+	if decoder != nil {
+		decoderInst := &decoders.Instruction{
+			Address: address,
+			Opcode:  opcode,
+			Size:    2,
+			Bytes:   data[:2],
 		}
+		if err := decoder(data, opcode, decoderInst); err != nil {
+			return nil, err
+		}
+		return &Instruction{
+			Address:  decoderInst.Address,
+			Opcode:   decoderInst.Opcode,
+			Mnemonic: decoderInst.Mnemonic,
+			Operands: decoderInst.Operands,
+			Size:     decoderInst.Size,
+			Bytes:    decoderInst.Bytes,
+		}, nil
 	}
 
 	// Unbekannte Instruktion als Hex-Werte ausgeben (DC.W)
-	inst.Mnemonic = "DC.W"
-	inst.Operands = fmt.Sprintf("$%04X", opcode)
-
-	return inst, nil
+	return &Instruction{
+		Address:  address,
+		Opcode:   opcode,
+		Mnemonic: "DC.W",
+		Operands: fmt.Sprintf("$%04X", opcode),
+		Size:     2, // Minimale Größe ist ein Word (2 Bytes)
+		Bytes:    data[:2],
+	}, nil
 }
 
 // DisassembleRange disassembliert einen Speicherbereich sequenziell.

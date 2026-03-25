@@ -22,15 +22,10 @@ func decodeMulDiv(mn string, data []byte, opcode uint16, inst *Instruction) erro
 	dstReg := uint8((opcode >> 9) & 0x7)
 	srcMode := uint8((opcode >> 3) & 0x7)
 	srcReg := uint8(opcode & 0x7)
-	srcStr, srcExtraWords, err := decodeAddressingMode(data[2:], srcMode, srcReg)
+	srcStr, offset, err := decodeEA(data, 2, srcMode, srcReg)
 	if err != nil {
 		return err
 	}
-	inst.Mnemonic = mn
-	inst.Operands = fmt.Sprintf("%s, D%d", srcStr, dstReg)
-	inst.Size = uint32(2 + srcExtraWords*2)
-	if len(data) >= int(inst.Size) {
-		inst.Bytes = data[:inst.Size]
-	}
+	setInstruction(data, inst, offset, mn, fmt.Sprintf("%s, D%d", srcStr, dstReg))
 	return nil
 }

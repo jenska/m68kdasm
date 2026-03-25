@@ -1,9 +1,6 @@
 package decoders
 
-import (
-	"encoding/binary"
-	"fmt"
-)
+import "fmt"
 
 func decodeAND(data []byte, opcode uint16, inst *Instruction) error {
 	return decodeLogical("AND", data, opcode, inst)
@@ -30,43 +27,25 @@ func decodeEORI(data []byte, opcode uint16, inst *Instruction) error {
 }
 
 func decodeLogicalI(mn string, data []byte, opcode uint16, inst *Instruction) error {
-	size := (opcode >> 6) & 0x3
-	sizeStr := "." + getSizeString(size)
-	dstMode := uint8((opcode >> 3) & 0x7)
-	dstReg := uint8(opcode & 0x7)
-	offset := 2
-	if len(data) < offset+2 {
-		return fmt.Errorf("insufficient data for " + mn)
-	}
-	immediate := uint32(binary.BigEndian.Uint16(data[offset : offset+2]))
-	offset += 2
-	dstOperand, extraWords, err := decodeAddressingMode(data[offset:], dstMode, dstReg)
+	sizeStr, immSize, err := immediateSpec((opcode>>6)&0x3, false, mn)
 	if err != nil {
 		return err
 	}
-	offset += extraWords * 2
-	inst.Mnemonic = mn + sizeStr
-	immStr := formatImmediate(immediate, 2)
-	inst.Operands = fmt.Sprintf("#%s, %s", immStr, dstOperand)
-	setInstructionSize(data, inst, offset)
+	dstMode := uint8((opcode >> 3) & 0x7)
+	dstReg := uint8(opcode & 0x7)
+
+	immediate, offset, err := readImmediate(data, 2, immSize, mn)
+	if err != nil {
+		return err
+	}
+	dstOperand, offset, err := decodeEA(data, offset, dstMode, dstReg)
+	if err != nil {
+		return err
+	}
+	setInstruction(data, inst, offset, mn+"."+sizeStr, fmt.Sprintf("#%s, %s", formatImmediate(immediate, immSize), dstOperand))
 	return nil
 }
 
 func decodeLogical(mn string, data []byte, opcode uint16, inst *Instruction) error {
-	direction := (opcode >> 8) & 0x1
-	size := (opcode >> 6) & 0x3
-	sizeStr := "." + getSizeString(size)
-	dstReg := uint8((opcode >> 9) & 0x7)
-	srcMode := uint8((opcode >> 3) & 0x7)
-	srcReg := uint8(opcode & 0x7)
-	offset := 2
-	srcStr, srcExtra, err := decodeAddressingMode(data[2:], srcMode, srcReg)
-	if err != nil {
-		return err
-	}
-	offset += srcExtra * 2
-	inst.Mnemonic = mn + sizeStr
-	inst.Operands = buildDirectedOperands(direction, srcStr, dstReg)
-	setInstructionSize(data, inst, offset)
-	return nil
+	return decodeDirectedBinaryOp(mn, data, opcode, inst)
 }

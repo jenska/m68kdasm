@@ -26,7 +26,7 @@ func decodeAddressingMode(data []byte, mode, reg uint8) (string, int, error) {
 
 	case 5: // Address Register Indirect with Displacement
 		if len(data) < 2 {
-			return "", 0, fmt.Errorf("nicht genügend Daten für Displacement")
+			return "", 0, fmt.Errorf("insufficient data for displacement")
 		}
 		displacement := int16(binary.BigEndian.Uint16(data[:2]))
 		return fmt.Sprintf("(%d,A%d)", displacement, reg), 1, nil
@@ -44,21 +44,21 @@ func decodeAddressingMode(data []byte, mode, reg uint8) (string, int, error) {
 		switch reg {
 		case 0: // Absolute Short Address
 			if len(data) < 2 {
-				return "", 0, fmt.Errorf("nicht genügend Daten für Absolute Short")
+				return "", 0, fmt.Errorf("insufficient data for absolute short")
 			}
 			addr := int16(binary.BigEndian.Uint16(data[:2]))
 			return fmt.Sprintf("$%04X", uint16(addr)), 1, nil
 
 		case 1: // Absolute Long Address
 			if len(data) < 4 {
-				return "", 0, fmt.Errorf("nicht genügend Daten für Absolute Long")
+				return "", 0, fmt.Errorf("insufficient data for absolute long")
 			}
 			addr := binary.BigEndian.Uint32(data[:4])
 			return fmt.Sprintf("$%08X", addr), 2, nil
 
 		case 2: // Program Counter with Displacement
 			if len(data) < 2 {
-				return "", 0, fmt.Errorf("nicht genügend Daten für PC Displacement")
+				return "", 0, fmt.Errorf("insufficient data for PC displacement")
 			}
 			displacement := int16(binary.BigEndian.Uint16(data[:2]))
 			return fmt.Sprintf("(%d,PC)", displacement), 1, nil
@@ -73,7 +73,7 @@ func decodeAddressingMode(data []byte, mode, reg uint8) (string, int, error) {
 
 		case 4: // Immediate Data
 			if len(data) < 2 {
-				return "", 0, fmt.Errorf("nicht genügend Daten für Immediate")
+				return "", 0, fmt.Errorf("insufficient data for immediate")
 			}
 			// Size is determined by context, but for now assume 16-bit
 			value := binary.BigEndian.Uint16(data[:2])
@@ -81,11 +81,11 @@ func decodeAddressingMode(data []byte, mode, reg uint8) (string, int, error) {
 			return fmt.Sprintf("#%s", immStr), 1, nil
 
 		default:
-			return "", 0, fmt.Errorf("unbekannte Adressierungsmode: %d.%d", mode, reg)
+			return "", 0, fmt.Errorf("unknown addressing mode: %d.%d", mode, reg)
 		}
 
 	default:
-		return "", 0, fmt.Errorf("unbekannte Adressierungsmode: %d", mode)
+		return "", 0, fmt.Errorf("unknown addressing mode: %d", mode)
 	}
 }
 
