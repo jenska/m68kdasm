@@ -73,7 +73,6 @@ const (
 
 	valOR    = 0x8000
 	valSUB   = 0x9000
-	valEOR   = 0xB100
 	valCMP   = 0xB000
 	valAND   = 0xC000
 	valADD   = 0xD000
@@ -156,7 +155,7 @@ var opcodeBuckets = [16][]OpcodePattern{
 		masked(maskFFC0, valPEA, decodePEA),        // PEA
 	},
 	0x6: {
-		masked(maskF100, valBxx, decodeBxx), // BRA (and conditional branches)
+		masked(maskF000, valBxx, decodeBxx), // BRA/BSR/Bcc
 	},
 	0x7: {
 		masked(maskF100, valMOVEQ, decodeMOVEQ), // MOVEQ
@@ -171,8 +170,7 @@ var opcodeBuckets = [16][]OpcodePattern{
 		masked(maskF000, valSUB, decodeSUB), // SUB
 	},
 	0xB: {
-		masked(maskF100, valEOR, decodeEOR), // EOR
-		masked(maskF000, valCMP, decodeCMP), // CMP
+		masked(maskF000, valCMP, decodeCMP), // CMP/CMPA/CMPM/EOR
 	},
 	0xC: {
 		masked(maskF1F0, valABCD, decodeABCD), // ABCD

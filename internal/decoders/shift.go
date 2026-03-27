@@ -62,7 +62,7 @@ func decodeShiftRotate(data []byte, opcode uint16, inst *Instruction) error {
 		memShiftType := (opcode >> 6) & 0x3
 		mnemonicBase := getMnemonicBase(memShiftType)
 		inst.Mnemonic = fmt.Sprintf("%s%s.W", mnemonicBase, dirStr)
-		operand, extraWords, err := decodeAddressingMode(data[2:], memMode, memReg)
+		operand, extraWords, err := decodeAddressingMode(data[2:], memMode, memReg, 2)
 		if err != nil {
 			return err
 		}

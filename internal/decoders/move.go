@@ -20,13 +20,17 @@ func decodeMOVE(data []byte, opcode uint16, inst *Instruction) error {
 	sizeField := (opcode >> 12) & 0x3
 
 	var sizeStr string
+	var sizeBytes int
 	switch sizeField {
 	case 1:
 		sizeStr = "B"
+		sizeBytes = 1
 	case 3:
 		sizeStr = "W"
+		sizeBytes = 2
 	case 2:
 		sizeStr = "L"
+		sizeBytes = 4
 	default:
 		return fmt.Errorf("unbekannte MOVE-Größe: %d", sizeField)
 	}
@@ -42,9 +46,17 @@ func decodeMOVE(data []byte, opcode uint16, inst *Instruction) error {
 	offset := 2
 
 	// Decode source addressing mode
-	srcStr, offset, err := decodeEA(data, offset, srcMode, srcReg)
+	srcStr, offset, err := decodeEAWithSize(data, offset, srcMode, srcReg, sizeBytes)
 	if err != nil {
 		return err
+	}
+
+	if dstMode == 1 {
+		if sizeField == 1 {
+			return fmt.Errorf("MOVEA does not support byte size")
+		}
+		setInstruction(data, inst, offset, "MOVEA."+sizeStr, fmt.Sprintf("%s, A%d", srcStr, dstReg))
+		return nil
 	}
 
 	// Decode destination addressing mode

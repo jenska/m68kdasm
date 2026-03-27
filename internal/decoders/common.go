@@ -53,7 +53,11 @@ func setInstruction(data []byte, inst *Instruction, size int, mnemonic, operands
 }
 
 func decodeEA(data []byte, offset int, mode, reg uint8) (string, int, error) {
-	operand, extraWords, err := decodeAddressingMode(data[offset:], mode, reg)
+	return decodeEAWithSize(data, offset, mode, reg, 2)
+}
+
+func decodeEAWithSize(data []byte, offset int, mode, reg uint8, operandSize int) (string, int, error) {
+	operand, extraWords, err := decodeAddressingMode(data[offset:], mode, reg, operandSize)
 	if err != nil {
 		return "", offset, err
 	}
@@ -62,18 +66,36 @@ func decodeEA(data []byte, offset int, mode, reg uint8) (string, int, error) {
 
 func decodeDirectedBinaryOp(mnemonic string, data []byte, opcode uint16, inst *Instruction) error {
 	direction := (opcode >> 8) & 0x1
-	sizeStr := getSizeString((opcode >> 6) & 0x3)
+	sizeBits := (opcode >> 6) & 0x3
+	sizeStr := getSizeString(sizeBits)
+	operandSize, err := operandSize(sizeBits, mnemonic)
+	if err != nil {
+		return err
+	}
 	dstReg := uint8((opcode >> 9) & 0x7)
 	srcMode := uint8((opcode >> 3) & 0x7)
 	srcReg := uint8(opcode & 0x7)
 
-	srcOperand, offset, err := decodeEA(data, 2, srcMode, srcReg)
+	srcOperand, offset, err := decodeEAWithSize(data, 2, srcMode, srcReg, operandSize)
 	if err != nil {
 		return err
 	}
 
 	setInstruction(data, inst, offset, mnemonic+"."+sizeStr, buildDirectedOperands(direction, srcOperand, dstReg))
 	return nil
+}
+
+func operandSize(size uint16, mnemonic string) (int, error) {
+	switch size {
+	case 0:
+		return 1, nil
+	case 1:
+		return 2, nil
+	case 2:
+		return 4, nil
+	default:
+		return 0, fmt.Errorf("unknown %s size: %d", mnemonic, size)
+	}
 }
 
 func immediateSpec(size uint16, longImmediate bool, mnemonic string) (string, int, error) {

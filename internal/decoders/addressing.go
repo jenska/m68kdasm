@@ -5,9 +5,11 @@ import (
 	"fmt"
 )
 
-// decodeAddressingMode decodes an addressing mode and returns the formatted string
+// decodeAddressingMode decodes an addressing mode and returns the formatted string.
+// operandSize is the logical operand width in bytes so immediate operands consume
+// the right number of extension words.
 // Returns: (formatted string, extra words needed, error)
-func decodeAddressingMode(data []byte, mode, reg uint8) (string, int, error) {
+func decodeAddressingMode(data []byte, mode, reg uint8, operandSize int) (string, int, error) {
 	switch mode {
 	case 0: // Data Register Direct
 		return fmt.Sprintf("D%d", reg), 0, nil
@@ -72,13 +74,27 @@ func decodeAddressingMode(data []byte, mode, reg uint8) (string, int, error) {
 			return fmt.Sprintf("(%d,PC,%s%d.%c)", displacement, indexType, indexReg, indexSize), 1, nil
 
 		case 4: // Immediate Data
-			if len(data) < 2 {
-				return "", 0, fmt.Errorf("insufficient data for immediate")
+			switch operandSize {
+			case 4:
+				if len(data) < 4 {
+					return "", 0, fmt.Errorf("insufficient data for long immediate")
+				}
+				value := binary.BigEndian.Uint32(data[:4])
+				return fmt.Sprintf("#%s", formatImmediate(value, operandSize)), 2, nil
+			case 1:
+				fallthrough
+			case 2:
+				if len(data) < 2 {
+					return "", 0, fmt.Errorf("insufficient data for immediate")
+				}
+				value := uint32(binary.BigEndian.Uint16(data[:2]))
+				if operandSize == 1 {
+					value &= 0xFF
+				}
+				return fmt.Sprintf("#%s", formatImmediate(value, operandSize)), 1, nil
+			default:
+				return "", 0, fmt.Errorf("unsupported immediate size: %d", operandSize)
 			}
-			// Size is determined by context, but for now assume 16-bit
-			value := binary.BigEndian.Uint16(data[:2])
-			immStr := formatImmediate(uint32(value), 2)
-			return fmt.Sprintf("#%s", immStr), 1, nil
 
 		default:
 			return "", 0, fmt.Errorf("unknown addressing mode: %d.%d", mode, reg)

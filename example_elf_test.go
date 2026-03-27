@@ -89,7 +89,7 @@ func TestELFDisassemblyRoundTrip(t *testing.T) {
 		"MOVE.W D0, D1",
 		"ADD.W #5, D1",
 		"CMP.W #10, D1",
-		"BNE.S $0004",
+		"BNE.S $1014",
 		"CLR.W D2",
 		"RTS",
 	}
