@@ -22,10 +22,10 @@ func decodeMulDiv(mn string, data []byte, opcode uint16, inst *Instruction) erro
 	dstReg := uint8((opcode >> 9) & 0x7)
 	srcMode := uint8((opcode >> 3) & 0x7)
 	srcReg := uint8(opcode & 0x7)
-	srcStr, offset, err := decodeEA(data, 2, srcMode, srcReg)
+	srcStr, offset, srcMeta, err := decodeEA(data, 2, srcMode, srcReg)
 	if err != nil {
 		return err
 	}
-	setInstruction(data, inst, offset, mn, fmt.Sprintf("%s, D%d", srcStr, dstReg))
+	setInstruction(data, inst, offset, mn, fmt.Sprintf("%s, D%d", srcStr, dstReg), srcMeta, registerOperand(RegisterKindData, dstReg))
 	return nil
 }

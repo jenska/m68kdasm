@@ -8,100 +8,208 @@ import (
 // decodeAddressingMode decodes an addressing mode and returns the formatted string.
 // operandSize is the logical operand width in bytes so immediate operands consume
 // the right number of extension words.
-// Returns: (formatted string, extra words needed, error)
-func decodeAddressingMode(data []byte, mode, reg uint8, operandSize int) (string, int, error) {
+// Returns: (formatted string, extra words needed, structured operand, error)
+func decodeAddressingMode(data []byte, mode, reg uint8, operandSize int) (string, int, Operand, error) {
 	switch mode {
 	case 0: // Data Register Direct
-		return fmt.Sprintf("D%d", reg), 0, nil
+		text := fmt.Sprintf("D%d", reg)
+		return text, 0, effectiveAddressOperand(text, EffectiveAddress{
+			Kind:     EAKindDataRegisterDirect,
+			Mode:     mode,
+			Register: reg,
+			Base: &Register{
+				Kind:   RegisterKindData,
+				Number: reg,
+			},
+		}), nil
 
 	case 1: // Address Register Direct
-		return fmt.Sprintf("A%d", reg), 0, nil
+		text := fmt.Sprintf("A%d", reg)
+		return text, 0, effectiveAddressOperand(text, EffectiveAddress{
+			Kind:     EAKindAddressRegisterDirect,
+			Mode:     mode,
+			Register: reg,
+			Base: &Register{
+				Kind:   RegisterKindAddress,
+				Number: reg,
+			},
+		}), nil
 
 	case 2: // Address Register Indirect
-		return fmt.Sprintf("(A%d)", reg), 0, nil
+		text := fmt.Sprintf("(A%d)", reg)
+		return text, 0, effectiveAddressOperand(text, EffectiveAddress{
+			Kind:     EAKindAddressIndirect,
+			Mode:     mode,
+			Register: reg,
+			Base: &Register{
+				Kind:   RegisterKindAddress,
+				Number: reg,
+			},
+		}), nil
 
 	case 3: // Address Register Indirect with Post-increment
-		return fmt.Sprintf("(A%d)+", reg), 0, nil
+		text := fmt.Sprintf("(A%d)+", reg)
+		return text, 0, effectiveAddressOperand(text, EffectiveAddress{
+			Kind:     EAKindPostIncrement,
+			Mode:     mode,
+			Register: reg,
+			Base: &Register{
+				Kind:   RegisterKindAddress,
+				Number: reg,
+			},
+		}), nil
 
 	case 4: // Address Register Indirect with Pre-decrement
-		return fmt.Sprintf("-(A%d)", reg), 0, nil
+		text := fmt.Sprintf("-(A%d)", reg)
+		return text, 0, effectiveAddressOperand(text, EffectiveAddress{
+			Kind:     EAKindPreDecrement,
+			Mode:     mode,
+			Register: reg,
+			Base: &Register{
+				Kind:   RegisterKindAddress,
+				Number: reg,
+			},
+		}), nil
 
 	case 5: // Address Register Indirect with Displacement
-		if len(data) < 2 {
-			return "", 0, fmt.Errorf("insufficient data for displacement")
+		if err := requireLength(data, 2, "displacement"); err != nil {
+			return "", 0, Operand{}, err
 		}
 		displacement := int16(binary.BigEndian.Uint16(data[:2]))
-		return fmt.Sprintf("(%d,A%d)", displacement, reg), 1, nil
+		text := fmt.Sprintf("(%d,A%d)", displacement, reg)
+		return text, 1, effectiveAddressOperand(text, EffectiveAddress{
+			Kind:         EAKindDisplacement,
+			Mode:         mode,
+			Register:     reg,
+			Base:         &Register{Kind: RegisterKindAddress, Number: reg},
+			Displacement: int32Ptr(int32(displacement)),
+		}), nil
 
 	case 6: // Address Register Indirect with Index
-		if len(data) < 2 {
-			return "", 0, fmt.Errorf("insufficient data for index")
+		if err := requireLength(data, 2, "index extension word"); err != nil {
+			return "", 0, Operand{}, err
 		}
 		indexWord := binary.BigEndian.Uint16(data[:2])
 		indexType, indexReg, indexSize, displacement := decodeIndexWord(indexWord)
-		return fmt.Sprintf("(%d,A%d,%s%d.%c)", displacement, reg, indexType, indexReg, indexSize), 1, nil
+		text := fmt.Sprintf("(%d,A%d,%s%d.%c)", displacement, reg, indexType, indexReg, indexSize)
+		return text, 1, effectiveAddressOperand(text, EffectiveAddress{
+			Kind:         EAKindIndex,
+			Mode:         mode,
+			Register:     reg,
+			Base:         &Register{Kind: RegisterKindAddress, Number: reg},
+			Displacement: int32Ptr(int32(displacement)),
+			Index: &IndexRegister{
+				Register: Register{Kind: parseIndexRegisterKind(indexType), Number: indexReg},
+				Size:     string(indexSize),
+			},
+		}), nil
 
 	case 7:
 		// Special cases based on register field
 		switch reg {
 		case 0: // Absolute Short Address
-			if len(data) < 2 {
-				return "", 0, fmt.Errorf("insufficient data for absolute short")
+			if err := requireLength(data, 2, "absolute short address"); err != nil {
+				return "", 0, Operand{}, err
 			}
 			addr := int16(binary.BigEndian.Uint16(data[:2]))
-			return fmt.Sprintf("$%04X", uint16(addr)), 1, nil
+			absolute := uint32(uint16(addr))
+			text := fmt.Sprintf("$%04X", uint16(addr))
+			return text, 1, effectiveAddressOperand(text, EffectiveAddress{
+				Kind:            EAKindAbsoluteShort,
+				Mode:            mode,
+				Register:        reg,
+				AbsoluteAddress: uint32Ptr(absolute),
+				ResolvedAddress: uint32Ptr(absolute),
+			}), nil
 
 		case 1: // Absolute Long Address
-			if len(data) < 4 {
-				return "", 0, fmt.Errorf("insufficient data for absolute long")
+			if err := requireLength(data, 4, "absolute long address"); err != nil {
+				return "", 0, Operand{}, err
 			}
 			addr := binary.BigEndian.Uint32(data[:4])
-			return fmt.Sprintf("$%08X", addr), 2, nil
+			text := fmt.Sprintf("$%08X", addr)
+			return text, 2, effectiveAddressOperand(text, EffectiveAddress{
+				Kind:            EAKindAbsoluteLong,
+				Mode:            mode,
+				Register:        reg,
+				AbsoluteAddress: uint32Ptr(addr),
+				ResolvedAddress: uint32Ptr(addr),
+			}), nil
 
 		case 2: // Program Counter with Displacement
-			if len(data) < 2 {
-				return "", 0, fmt.Errorf("insufficient data for PC displacement")
+			if err := requireLength(data, 2, "pc displacement"); err != nil {
+				return "", 0, Operand{}, err
 			}
 			displacement := int16(binary.BigEndian.Uint16(data[:2]))
-			return fmt.Sprintf("(%d,PC)", displacement), 1, nil
+			text := fmt.Sprintf("(%d,PC)", displacement)
+			return text, 1, effectiveAddressOperand(text, EffectiveAddress{
+				Kind:         EAKindPCDisplacement,
+				Mode:         mode,
+				Register:     reg,
+				Base:         &Register{Kind: RegisterKindPC},
+				Displacement: int32Ptr(int32(displacement)),
+			}), nil
 
 		case 3: // Program Counter with Index
-			if len(data) < 2 {
-				return "", 0, fmt.Errorf("insufficient data for PC index")
+			if err := requireLength(data, 2, "pc index extension word"); err != nil {
+				return "", 0, Operand{}, err
 			}
 			indexWord := binary.BigEndian.Uint16(data[:2])
 			indexType, indexReg, indexSize, displacement := decodeIndexWord(indexWord)
-			return fmt.Sprintf("(%d,PC,%s%d.%c)", displacement, indexType, indexReg, indexSize), 1, nil
+			text := fmt.Sprintf("(%d,PC,%s%d.%c)", displacement, indexType, indexReg, indexSize)
+			return text, 1, effectiveAddressOperand(text, EffectiveAddress{
+				Kind:         EAKindPCIndex,
+				Mode:         mode,
+				Register:     reg,
+				Base:         &Register{Kind: RegisterKindPC},
+				Displacement: int32Ptr(int32(displacement)),
+				Index: &IndexRegister{
+					Register: Register{Kind: parseIndexRegisterKind(indexType), Number: indexReg},
+					Size:     string(indexSize),
+				},
+			}), nil
 
 		case 4: // Immediate Data
 			switch operandSize {
 			case 4:
-				if len(data) < 4 {
-					return "", 0, fmt.Errorf("insufficient data for long immediate")
+				if err := requireLength(data, 4, "long immediate"); err != nil {
+					return "", 0, Operand{}, err
 				}
 				value := binary.BigEndian.Uint32(data[:4])
-				return fmt.Sprintf("#%s", formatImmediate(value, operandSize)), 2, nil
+				text := fmt.Sprintf("#%s", formatImmediate(value, operandSize))
+				return text, 2, effectiveAddressOperand(text, EffectiveAddress{
+					Kind:      EAKindImmediate,
+					Mode:      mode,
+					Register:  reg,
+					Immediate: immediatePtr(value, operandSize),
+				}), nil
 			case 1:
 				fallthrough
 			case 2:
-				if len(data) < 2 {
-					return "", 0, fmt.Errorf("insufficient data for immediate")
+				if err := requireLength(data, 2, "immediate"); err != nil {
+					return "", 0, Operand{}, err
 				}
 				value := uint32(binary.BigEndian.Uint16(data[:2]))
 				if operandSize == 1 {
 					value &= 0xFF
 				}
-				return fmt.Sprintf("#%s", formatImmediate(value, operandSize)), 1, nil
+				text := fmt.Sprintf("#%s", formatImmediate(value, operandSize))
+				return text, 1, effectiveAddressOperand(text, EffectiveAddress{
+					Kind:      EAKindImmediate,
+					Mode:      mode,
+					Register:  reg,
+					Immediate: immediatePtr(value, operandSize),
+				}), nil
 			default:
-				return "", 0, fmt.Errorf("unsupported immediate size: %d", operandSize)
+				return "", 0, Operand{}, fmt.Errorf("unsupported immediate size: %d", operandSize)
 			}
 
 		default:
-			return "", 0, fmt.Errorf("unknown addressing mode: %d.%d", mode, reg)
+			return "", 0, Operand{}, fmt.Errorf("unknown addressing mode: %d.%d", mode, reg)
 		}
 
 	default:
-		return "", 0, fmt.Errorf("unknown addressing mode: %d", mode)
+		return "", 0, Operand{}, fmt.Errorf("unknown addressing mode: %d", mode)
 	}
 }
 
@@ -149,4 +257,11 @@ func decodeIndexWord(indexWord uint16) (indexType string, indexReg, indexSize ui
 	}
 	displacement = int8(indexWord & 0xFF)
 	return
+}
+
+func parseIndexRegisterKind(indexType string) RegisterKind {
+	if indexType == "A" {
+		return RegisterKindAddress
+	}
+	return RegisterKindData
 }

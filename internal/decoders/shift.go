@@ -45,15 +45,11 @@ func decodeShiftRotate(data []byte, opcode uint16, inst *Instruction) error {
 				count = 8
 			}
 			countStr = fmt.Sprintf("#%d", count)
+			setInstruction(data, inst, 2, fmt.Sprintf("%s%s.%s", mnemonicBase, dirStr, sizeStr), fmt.Sprintf("%s, D%d", countStr, reg), immediateOperand(countStr, uint32(count), 1), registerOperand(RegisterKindData, reg))
 		} else {
 			countReg := (opcode >> 9) & 0x7
 			countStr = fmt.Sprintf("D%d", countReg)
-		}
-		inst.Mnemonic = fmt.Sprintf("%s%s.%s", mnemonicBase, dirStr, sizeStr)
-		inst.Operands = fmt.Sprintf("%s, D%d", countStr, reg)
-		inst.Size = 2
-		if len(data) >= 2 {
-			inst.Bytes = data[:2]
+			setInstruction(data, inst, 2, fmt.Sprintf("%s%s.%s", mnemonicBase, dirStr, sizeStr), fmt.Sprintf("%s, D%d", countStr, reg), registerOperand(RegisterKindData, uint8(countReg)), registerOperand(RegisterKindData, reg))
 		}
 	} else {
 		// Memory shift: extract addressing mode
@@ -61,16 +57,12 @@ func decodeShiftRotate(data []byte, opcode uint16, inst *Instruction) error {
 		memReg := uint8(opcode & 0x7)
 		memShiftType := (opcode >> 6) & 0x3
 		mnemonicBase := getMnemonicBase(memShiftType)
-		inst.Mnemonic = fmt.Sprintf("%s%s.W", mnemonicBase, dirStr)
-		operand, extraWords, err := decodeAddressingMode(data[2:], memMode, memReg, 2)
+		mnemonic := fmt.Sprintf("%s%s.W", mnemonicBase, dirStr)
+		operand, extraWords, meta, err := decodeAddressingMode(data[2:], memMode, memReg, 2)
 		if err != nil {
 			return err
 		}
-		inst.Operands = operand
-		inst.Size = uint32(2 + extraWords*2)
-		if len(data) >= int(inst.Size) {
-			inst.Bytes = data[:inst.Size]
-		}
+		setInstruction(data, inst, 2+extraWords*2, mnemonic, operand, meta)
 	}
 	return nil
 }

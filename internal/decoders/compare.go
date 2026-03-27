@@ -23,11 +23,11 @@ func decodeCMP(data []byte, opcode uint16, inst *Instruction) error {
 	srcMode := uint8((opcode >> 3) & 0x7)
 	srcReg := uint8(opcode & 0x7)
 
-	srcStr, offset, err := decodeEAWithSize(data, 2, srcMode, srcReg, sizeBytes)
+	srcStr, offset, srcMeta, err := decodeEAWithSize(data, 2, srcMode, srcReg, sizeBytes)
 	if err != nil {
 		return err
 	}
-	setInstruction(data, inst, offset, "CMP."+sizeStr, fmt.Sprintf("%s, D%d", srcStr, dstReg))
+	setInstruction(data, inst, offset, "CMP."+sizeStr, fmt.Sprintf("%s, D%d", srcStr, dstReg), srcMeta, registerOperand(RegisterKindData, dstReg))
 	return nil
 }
 
@@ -44,12 +44,12 @@ func decodeCMPA(data []byte, opcode uint16, inst *Instruction) error {
 		sizeBytes = 4
 	}
 
-	srcStr, offset, err := decodeEAWithSize(data, 2, srcMode, srcReg, sizeBytes)
+	srcStr, offset, srcMeta, err := decodeEAWithSize(data, 2, srcMode, srcReg, sizeBytes)
 	if err != nil {
 		return err
 	}
 
-	setInstruction(data, inst, offset, "CMPA."+sizeStr, fmt.Sprintf("%s, A%d", srcStr, dstReg))
+	setInstruction(data, inst, offset, "CMPA."+sizeStr, fmt.Sprintf("%s, A%d", srcStr, dstReg), srcMeta, registerOperand(RegisterKindAddress, dstReg))
 	return nil
 }
 
@@ -58,7 +58,17 @@ func decodeCMPM(data []byte, opcode uint16, inst *Instruction) error {
 	sizeStr := getSizeString(sizeBits)
 	srcReg := uint8(opcode & 0x7)
 	dstReg := uint8((opcode >> 9) & 0x7)
-	setInstruction(data, inst, 2, "CMPM."+sizeStr, fmt.Sprintf("(A%d)+, (A%d)+", srcReg, dstReg))
+	srcText := fmt.Sprintf("(A%d)+", srcReg)
+	dstText := fmt.Sprintf("(A%d)+", dstReg)
+	setInstruction(data, inst, 2, "CMPM."+sizeStr, fmt.Sprintf("%s, %s", srcText, dstText), effectiveAddressOperand(srcText, EffectiveAddress{
+		Kind:     EAKindPostIncrement,
+		Base:     &Register{Kind: RegisterKindAddress, Number: srcReg},
+		Register: srcReg,
+	}), effectiveAddressOperand(dstText, EffectiveAddress{
+		Kind:     EAKindPostIncrement,
+		Base:     &Register{Kind: RegisterKindAddress, Number: dstReg},
+		Register: dstReg,
+	}))
 	return nil
 }
 
@@ -73,10 +83,11 @@ func decodeCMPI(data []byte, opcode uint16, inst *Instruction) error {
 	if err != nil {
 		return err
 	}
-	dstOperand, offset, err := decodeEA(data, offset, dstMode, dstReg)
+	dstOperand, offset, dstMeta, err := decodeEA(data, offset, dstMode, dstReg)
 	if err != nil {
 		return err
 	}
-	setInstruction(data, inst, offset, "CMPI."+sizeStr, fmt.Sprintf("#%s, %s", formatImmediate(immediate, immSize), dstOperand))
+	immText := fmt.Sprintf("#%s", formatImmediate(immediate, immSize))
+	setInstruction(data, inst, offset, "CMPI."+sizeStr, fmt.Sprintf("%s, %s", immText, dstOperand), immediateOperand(immText, immediate, immSize), dstMeta)
 	return nil
 }

@@ -15,9 +15,19 @@ func decodeBCD(mn string, data []byte, opcode uint16, inst *Instruction) error {
 	dstReg := uint8((opcode >> 9) & 0x7)
 	addressingMode := (opcode >> 3) & 0x1
 	if addressingMode == 0 {
-		setInstruction(data, inst, 2, mn, fmt.Sprintf("D%d, D%d", srcReg, dstReg))
+		setInstruction(data, inst, 2, mn, fmt.Sprintf("D%d, D%d", srcReg, dstReg), registerOperand(RegisterKindData, srcReg), registerOperand(RegisterKindData, dstReg))
 		return nil
 	}
-	setInstruction(data, inst, 2, mn, fmt.Sprintf("-(A%d), -(A%d)", srcReg, dstReg))
+	srcText := fmt.Sprintf("-(A%d)", srcReg)
+	dstText := fmt.Sprintf("-(A%d)", dstReg)
+	setInstruction(data, inst, 2, mn, fmt.Sprintf("%s, %s", srcText, dstText), effectiveAddressOperand(srcText, EffectiveAddress{
+		Kind:     EAKindPreDecrement,
+		Base:     &Register{Kind: RegisterKindAddress, Number: srcReg},
+		Register: srcReg,
+	}), effectiveAddressOperand(dstText, EffectiveAddress{
+		Kind:     EAKindPreDecrement,
+		Base:     &Register{Kind: RegisterKindAddress, Number: dstReg},
+		Register: dstReg,
+	}))
 	return nil
 }

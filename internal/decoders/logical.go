@@ -38,11 +38,12 @@ func decodeLogicalI(mn string, data []byte, opcode uint16, inst *Instruction) er
 	if err != nil {
 		return err
 	}
-	dstOperand, offset, err := decodeEA(data, offset, dstMode, dstReg)
+	dstOperand, offset, dstMeta, err := decodeEA(data, offset, dstMode, dstReg)
 	if err != nil {
 		return err
 	}
-	setInstruction(data, inst, offset, mn+"."+sizeStr, fmt.Sprintf("#%s, %s", formatImmediate(immediate, immSize), dstOperand))
+	immText := fmt.Sprintf("#%s", formatImmediate(immediate, immSize))
+	setInstruction(data, inst, offset, mn+"."+sizeStr, fmt.Sprintf("%s, %s", immText, dstOperand), immediateOperand(immText, immediate, immSize), dstMeta)
 	return nil
 }
 

@@ -9,37 +9,39 @@ func decodeLEA(data []byte, opcode uint16, inst *Instruction) error {
 	regX := uint8((opcode >> 9) & 0x7)
 	mode := uint8((opcode >> 3) & 0x7)
 	reg := uint8(opcode & 0x7)
-	operand, offset, err := decodeEA(data, 2, mode, reg)
+	operand, offset, meta, err := decodeEA(data, 2, mode, reg)
 	if err != nil {
 		return err
 	}
-	setInstruction(data, inst, offset, "LEA", fmt.Sprintf("%s, A%d", operand, regX))
+	setInstruction(data, inst, offset, "LEA", fmt.Sprintf("%s, A%d", operand, regX), meta, registerOperand(RegisterKindAddress, regX))
 	return nil
 }
 
 func decodePEA(data []byte, opcode uint16, inst *Instruction) error {
 	mode := uint8((opcode >> 3) & 0x7)
 	reg := uint8(opcode & 0x7)
-	operand, offset, err := decodeEA(data, 2, mode, reg)
+	operand, offset, meta, err := decodeEA(data, 2, mode, reg)
 	if err != nil {
 		return err
 	}
-	setInstruction(data, inst, offset, "PEA", operand)
+	setInstruction(data, inst, offset, "PEA", operand, meta)
 	return nil
 }
 
 func decodeSTOP(data []byte, opcode uint16, inst *Instruction) error {
-	if len(data) < 4 {
-		return fmt.Errorf("insufficient data for STOP")
+	if err := requireLength(data, 4, "STOP immediate"); err != nil {
+		return err
 	}
 	immediate := binary.BigEndian.Uint16(data[2:4])
-	setInstruction(data, inst, 4, "STOP", fmt.Sprintf("#%s", formatImmediate(uint32(immediate), 2)))
+	immText := fmt.Sprintf("#%s", formatImmediate(uint32(immediate), 2))
+	setInstruction(data, inst, 4, "STOP", immText, immediateOperand(immText, uint32(immediate), 2))
 	return nil
 }
 
 func decodeTRAP(data []byte, opcode uint16, inst *Instruction) error {
 	vector := opcode & 0xF
-	setInstruction(data, inst, 2, "TRAP", fmt.Sprintf("#%d", vector))
+	immText := fmt.Sprintf("#%d", vector)
+	setInstruction(data, inst, 2, "TRAP", immText, immediateOperand(immText, uint32(vector), 1))
 	return nil
 }
 
@@ -48,7 +50,7 @@ func decodeTRAPV(data []byte, opcode uint16, inst *Instruction) error {
 	return nil
 }
 
-func formatRegisterList(regListMask uint16, direction uint16) string {
+func formatRegisterList(regListMask uint16, direction uint16) (string, []string) {
 	registers := []string{}
 	if direction == 0 {
 		for i := 0; i < 8; i++ {
@@ -73,7 +75,7 @@ func formatRegisterList(regListMask uint16, direction uint16) string {
 			}
 		}
 	}
-	return formatRegisterRange(registers)
+	return formatRegisterRange(registers), registers
 }
 
 func formatRegisterRange(registers []string) string {

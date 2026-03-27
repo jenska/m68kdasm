@@ -8,7 +8,8 @@ import (
 func decodeMOVEQ(data []byte, opcode uint16, inst *Instruction) error {
 	dstReg := uint8((opcode >> 9) & 0x7)
 	immediate := int8(opcode & 0xFF)
-	setInstruction(data, inst, 2, "MOVEQ", fmt.Sprintf("#%s, D%d", formatImmediateForMOVEQ(int32(immediate)), dstReg))
+	immText := fmt.Sprintf("#%s", formatImmediateForMOVEQ(int32(immediate)))
+	setInstruction(data, inst, 2, "MOVEQ", fmt.Sprintf("%s, D%d", immText, dstReg), immediateOperand(immText, uint32(uint8(immediate)), 1), registerOperand(RegisterKindData, dstReg))
 	return nil
 }
 
@@ -46,7 +47,7 @@ func decodeMOVE(data []byte, opcode uint16, inst *Instruction) error {
 	offset := 2
 
 	// Decode source addressing mode
-	srcStr, offset, err := decodeEAWithSize(data, offset, srcMode, srcReg, sizeBytes)
+	srcStr, offset, srcMeta, err := decodeEAWithSize(data, offset, srcMode, srcReg, sizeBytes)
 	if err != nil {
 		return err
 	}
@@ -55,24 +56,24 @@ func decodeMOVE(data []byte, opcode uint16, inst *Instruction) error {
 		if sizeField == 1 {
 			return fmt.Errorf("MOVEA does not support byte size")
 		}
-		setInstruction(data, inst, offset, "MOVEA."+sizeStr, fmt.Sprintf("%s, A%d", srcStr, dstReg))
+		setInstruction(data, inst, offset, "MOVEA."+sizeStr, fmt.Sprintf("%s, A%d", srcStr, dstReg), srcMeta, registerOperand(RegisterKindAddress, dstReg))
 		return nil
 	}
 
 	// Decode destination addressing mode
-	dstStr, offset, err := decodeEA(data, offset, dstMode, dstReg)
+	dstStr, offset, dstMeta, err := decodeEA(data, offset, dstMode, dstReg)
 	if err != nil {
 		return err
 	}
 
-	setInstruction(data, inst, offset, "MOVE."+sizeStr, fmt.Sprintf("%s, %s", srcStr, dstStr))
+	setInstruction(data, inst, offset, "MOVE."+sizeStr, fmt.Sprintf("%s, %s", srcStr, dstStr), srcMeta, dstMeta)
 
 	return nil
 }
 
 func decodeMOVEM(data []byte, opcode uint16, inst *Instruction) error {
-	if len(data) < 4 {
-		return fmt.Errorf("insufficient data for MOVEM")
+	if err := requireLength(data, 4, "MOVEM register list"); err != nil {
+		return err
 	}
 	direction := (opcode >> 10) & 0x1
 	sizeStr := "W"
@@ -84,18 +85,20 @@ func decodeMOVEM(data []byte, opcode uint16, inst *Instruction) error {
 	regListMask := binary.BigEndian.Uint16(data[2:4])
 	offset := 4
 	var addrModeStr string
+	var addrModeMeta Operand
 	var err error
 	if mode != 0 || reg != 0 {
-		addrModeStr, offset, err = decodeEA(data, offset, mode, reg)
+		addrModeStr, offset, addrModeMeta, err = decodeEA(data, offset, mode, reg)
 		if err != nil {
 			return err
 		}
 	}
-	regList := formatRegisterList(regListMask, direction)
+	regListText, registers := formatRegisterList(regListMask, direction)
+	regListMeta := registerListOperand(regListText, registers)
 	if direction == 0 {
-		setInstruction(data, inst, offset, "MOVEM."+sizeStr, fmt.Sprintf("%s, %s", regList, addrModeStr))
+		setInstruction(data, inst, offset, "MOVEM."+sizeStr, fmt.Sprintf("%s, %s", regListText, addrModeStr), regListMeta, addrModeMeta)
 		return nil
 	}
-	setInstruction(data, inst, offset, "MOVEM."+sizeStr, fmt.Sprintf("%s, %s", addrModeStr, regList))
+	setInstruction(data, inst, offset, "MOVEM."+sizeStr, fmt.Sprintf("%s, %s", addrModeStr, regListText), addrModeMeta, regListMeta)
 	return nil
 }

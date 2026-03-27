@@ -1,5 +1,7 @@
 package decoders
 
+import "strings"
+
 // common masks and values used by the decoder jump table
 const (
 	// masks
@@ -88,6 +90,91 @@ type Instruction struct {
 	Operands string
 	Size     uint32 // Size in bytes
 	Bytes    []byte // Raw instruction data
+	// ExtensionWords holds any decoded words that follow the opcode word.
+	ExtensionWords []uint16
+	Metadata       Metadata
+}
+
+type Metadata struct {
+	Mnemonic        string
+	MnemonicBase    string
+	SizeSuffix      string
+	Operands        []Operand
+	BranchTarget    *uint32
+	ImmediateValues []ImmediateValue
+}
+
+type OperandKind string
+
+const (
+	OperandKindRegister      OperandKind = "register"
+	OperandKindImmediate     OperandKind = "immediate"
+	OperandKindEffectiveAddr OperandKind = "effective_address"
+	OperandKindRegisterList  OperandKind = "register_list"
+	OperandKindBranchTarget  OperandKind = "branch_target"
+)
+
+type RegisterKind string
+
+const (
+	RegisterKindData    RegisterKind = "data"
+	RegisterKindAddress RegisterKind = "address"
+	RegisterKindPC      RegisterKind = "pc"
+)
+
+type Register struct {
+	Kind   RegisterKind
+	Number uint8
+}
+
+type ImmediateValue struct {
+	Value  uint32
+	Signed int32
+	Size   uint8
+}
+
+type EffectiveAddressKind string
+
+const (
+	EAKindDataRegisterDirect    EffectiveAddressKind = "data_register_direct"
+	EAKindAddressRegisterDirect EffectiveAddressKind = "address_register_direct"
+	EAKindAddressIndirect       EffectiveAddressKind = "address_indirect"
+	EAKindPostIncrement         EffectiveAddressKind = "post_increment"
+	EAKindPreDecrement          EffectiveAddressKind = "pre_decrement"
+	EAKindDisplacement          EffectiveAddressKind = "displacement"
+	EAKindIndex                 EffectiveAddressKind = "index"
+	EAKindAbsoluteShort         EffectiveAddressKind = "absolute_short"
+	EAKindAbsoluteLong          EffectiveAddressKind = "absolute_long"
+	EAKindPCDisplacement        EffectiveAddressKind = "pc_displacement"
+	EAKindPCIndex               EffectiveAddressKind = "pc_index"
+	EAKindImmediate             EffectiveAddressKind = "immediate"
+)
+
+type IndexRegister struct {
+	Register Register
+	Size     string
+}
+
+type EffectiveAddress struct {
+	Kind            EffectiveAddressKind
+	Mode            uint8
+	Register        uint8
+	Base            *Register
+	Displacement    *int32
+	AbsoluteAddress *uint32
+	ResolvedAddress *uint32
+	Immediate       *ImmediateValue
+	Index           *IndexRegister
+}
+
+type Operand struct {
+	Text             string
+	Kind             OperandKind
+	Register         *Register
+	Immediate        *ImmediateValue
+	EffectiveAddress *EffectiveAddress
+	RegisterList     []string
+	BranchTarget     *uint32
 }
 
 // OpcodeDecoder is the type for decoder functions
@@ -211,4 +298,86 @@ func flattenOpcodeBuckets() []OpcodePattern {
 		flat = append(flat, bucket...)
 	}
 	return flat
+}
+
+func populateMetadata(inst *Instruction, mnemonic string, operands []Operand) {
+	base, suffix, _ := strings.Cut(mnemonic, ".")
+	inst.Metadata = Metadata{
+		Mnemonic:     mnemonic,
+		MnemonicBase: base,
+		SizeSuffix:   suffix,
+		Operands:     cloneOperands(operands),
+	}
+
+	for _, operand := range operands {
+		if operand.BranchTarget != nil && inst.Metadata.BranchTarget == nil {
+			target := *operand.BranchTarget
+			inst.Metadata.BranchTarget = &target
+		}
+		if operand.Immediate != nil {
+			inst.Metadata.ImmediateValues = append(inst.Metadata.ImmediateValues, *operand.Immediate)
+		}
+		if operand.EffectiveAddress != nil && operand.EffectiveAddress.Immediate != nil {
+			inst.Metadata.ImmediateValues = append(inst.Metadata.ImmediateValues, *operand.EffectiveAddress.Immediate)
+		}
+	}
+}
+
+func cloneOperands(src []Operand) []Operand {
+	if len(src) == 0 {
+		return nil
+	}
+	dst := make([]Operand, len(src))
+	for i, operand := range src {
+		dst[i] = cloneOperand(operand)
+	}
+	return dst
+}
+
+func cloneOperand(operand Operand) Operand {
+	cloned := operand
+	if operand.Register != nil {
+		reg := *operand.Register
+		cloned.Register = &reg
+	}
+	if operand.Immediate != nil {
+		imm := *operand.Immediate
+		cloned.Immediate = &imm
+	}
+	if operand.EffectiveAddress != nil {
+		ea := *operand.EffectiveAddress
+		if operand.EffectiveAddress.Base != nil {
+			base := *operand.EffectiveAddress.Base
+			ea.Base = &base
+		}
+		if operand.EffectiveAddress.Displacement != nil {
+			disp := *operand.EffectiveAddress.Displacement
+			ea.Displacement = &disp
+		}
+		if operand.EffectiveAddress.AbsoluteAddress != nil {
+			addr := *operand.EffectiveAddress.AbsoluteAddress
+			ea.AbsoluteAddress = &addr
+		}
+		if operand.EffectiveAddress.ResolvedAddress != nil {
+			addr := *operand.EffectiveAddress.ResolvedAddress
+			ea.ResolvedAddress = &addr
+		}
+		if operand.EffectiveAddress.Immediate != nil {
+			imm := *operand.EffectiveAddress.Immediate
+			ea.Immediate = &imm
+		}
+		if operand.EffectiveAddress.Index != nil {
+			idx := *operand.EffectiveAddress.Index
+			ea.Index = &idx
+		}
+		cloned.EffectiveAddress = &ea
+	}
+	if operand.RegisterList != nil {
+		cloned.RegisterList = append([]string(nil), operand.RegisterList...)
+	}
+	if operand.BranchTarget != nil {
+		target := *operand.BranchTarget
+		cloned.BranchTarget = &target
+	}
+	return cloned
 }

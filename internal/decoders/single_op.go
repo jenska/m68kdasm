@@ -24,10 +24,10 @@ func decodeSingleOp(data []byte, opcode uint16, inst *Instruction, mnemonic stri
 	sizeStr := getSizeString((opcode >> 6) & 0x3)
 	mode := uint8((opcode >> 3) & 0x7)
 	reg := uint8(opcode & 0x7)
-	operand, offset, err := decodeEA(data, 2, mode, reg)
+	operand, offset, meta, err := decodeEA(data, 2, mode, reg)
 	if err != nil {
 		return err
 	}
-	setInstruction(data, inst, offset, mnemonic+"."+sizeStr, operand)
+	setInstruction(data, inst, offset, mnemonic+"."+sizeStr, operand, meta)
 	return nil
 }

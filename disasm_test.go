@@ -1,6 +1,9 @@
 package m68kdasm
 
 import (
+	"bytes"
+	"errors"
+	"io"
 	"testing"
 
 	"github.com/jenska/m68kasm"
@@ -219,5 +222,120 @@ func TestDecodeRegressionMaintainsInstructionAlignment(t *testing.T) {
 		if got := instrs[i].Assembly(); got != expected {
 			t.Fatalf("Instruktion %d mismatch!\nErwartet: '%s'\nErhalten: '%s'", i, expected, got)
 		}
+	}
+}
+
+func TestDecodeReturnsStructuredMetadataAndExtensionWords(t *testing.T) {
+	data := []byte{0x20, 0x7C, 0x00, 0x00, 0x21, 0x40} // MOVEA.L #$00002140, A0
+
+	inst, err := Decode(data, 0x2000)
+	if err != nil {
+		t.Fatalf("Decode-Fehler: %v", err)
+	}
+
+	if inst.Size != 6 {
+		t.Fatalf("Erwartete Instruktionsgröße 6, erhielt %d", inst.Size)
+	}
+	if len(inst.ExtensionWords) != 2 || inst.ExtensionWords[0] != 0x0000 || inst.ExtensionWords[1] != 0x2140 {
+		t.Fatalf("Unerwartete Extension-Wörter: %#v", inst.ExtensionWords)
+	}
+	if inst.Metadata.MnemonicBase != "MOVEA" || inst.Metadata.SizeSuffix != "L" {
+		t.Fatalf("Unerwartete Metadaten für Mnemonic: %+v", inst.Metadata)
+	}
+	if len(inst.Metadata.Operands) != 2 {
+		t.Fatalf("Erwartete 2 Operanden, erhielt %d", len(inst.Metadata.Operands))
+	}
+	src := inst.Metadata.Operands[0]
+	if src.Kind != OperandKindEffectiveAddr || src.EffectiveAddress == nil || src.EffectiveAddress.Kind != EAKindImmediate {
+		t.Fatalf("Quelloperand wurde nicht als Immediate-EA dekodiert: %+v", src)
+	}
+	if src.EffectiveAddress.Immediate == nil || src.EffectiveAddress.Immediate.Value != 0x2140 {
+		t.Fatalf("Immediate-Metadaten fehlen: %+v", src.EffectiveAddress)
+	}
+	dst := inst.Metadata.Operands[1]
+	if dst.Kind != OperandKindRegister || dst.Register == nil || dst.Register.Kind != RegisterKindAddress || dst.Register.Number != 0 {
+		t.Fatalf("Zieloperand wurde nicht als A0 dekodiert: %+v", dst)
+	}
+	if len(inst.Metadata.ImmediateValues) != 1 || inst.Metadata.ImmediateValues[0].Value != 0x2140 {
+		t.Fatalf("Unerwartete Immediate-Liste: %+v", inst.Metadata.ImmediateValues)
+	}
+}
+
+func TestDecodeReaderAtSupportsStreamingDecode(t *testing.T) {
+	data := []byte{0x20, 0x7C, 0x00, 0x00, 0x21, 0x40}
+
+	inst, err := DecodeReaderAt(bytes.NewReader(data), 0)
+	if err != nil {
+		t.Fatalf("DecodeReaderAt-Fehler: %v", err)
+	}
+	if got := inst.Assembly(); got != "MOVEA.L #$00002140, A0" {
+		t.Fatalf("Unerwartete Assembly: %s", got)
+	}
+}
+
+func TestDecodeFuncSupportsCallbackReads(t *testing.T) {
+	data := []byte{0x67, 0x08} // BEQ.S $000A at address 0
+	var calls []uint32
+
+	inst, err := DecodeFunc(func(address uint32, p []byte) (int, error) {
+		calls = append(calls, address)
+		if int(address) >= len(data) {
+			return 0, io.EOF
+		}
+		n := copy(p, data[address:])
+		if n < len(p) {
+			return n, io.EOF
+		}
+		return n, nil
+	}, 0)
+	if err != nil {
+		t.Fatalf("DecodeFunc-Fehler: %v", err)
+	}
+	if got := inst.Assembly(); got != "BEQ.S $000A" {
+		t.Fatalf("Unerwartete Assembly: %s", got)
+	}
+	if len(calls) == 0 {
+		t.Fatal("DecodeFunc hat den Callback nicht verwendet")
+	}
+}
+
+func TestDecodePartialErrorsReportMissingBytes(t *testing.T) {
+	_, err := Decode([]byte{0x4E, 0x72}, 0x1000) // STOP missing immediate word
+	if err == nil {
+		t.Fatal("Erwartete PartialDecodeError")
+	}
+
+	var partial *PartialDecodeError
+	if !errors.As(err, &partial) {
+		t.Fatalf("Erwartete PartialDecodeError, erhielt %T", err)
+	}
+	if partial.Missing != 2 || partial.Context != "STOP immediate" {
+		t.Fatalf("Unerwartete PartialDecodeError-Daten: %+v", partial)
+	}
+	if got := partial.Error(); got != "need 2 more byte(s) for STOP immediate at address 00001000" {
+		t.Fatalf("Unerwartete Fehlermeldung: %q", got)
+	}
+}
+
+func TestDecodeSymbolizerFormatsResolvedAddresses(t *testing.T) {
+	data := []byte{0x4E, 0xB9, 0x00, 0x00, 0x12, 0x34} // JSR $00001234
+
+	inst, err := DecodeWithOptions(data, 0, DecodeOptions{
+		Symbolizer: SymbolizeFunc(func(address uint32) (string, bool) {
+			if address == 0x1234 {
+				return "_bios_init", true
+			}
+			return "", false
+		}),
+	})
+	if err != nil {
+		t.Fatalf("DecodeWithOptions-Fehler: %v", err)
+	}
+
+	if got := inst.Assembly(); got != "JSR _bios_init" {
+		t.Fatalf("Unerwartete symbolisierte Assembly: %s", got)
+	}
+	if inst.Metadata.Operands[0].Text != "$00001234" {
+		t.Fatalf("Rohoperand wurde unerwartet überschrieben: %+v", inst.Metadata.Operands[0])
 	}
 }

@@ -46,12 +46,13 @@ func decodeImmediateBinaryOp(mnemonic string, data []byte, opcode uint16, inst *
 		return err
 	}
 
-	dstOperand, offset, err := decodeEA(data, offset, dstMode, dstReg)
+	dstOperand, offset, dstMeta, err := decodeEA(data, offset, dstMode, dstReg)
 	if err != nil {
 		return err
 	}
 
-	setInstruction(data, inst, offset, fmt.Sprintf("%s.%s", mnemonic, sizeStr), fmt.Sprintf("#%s, %s", formatImmediate(immediate, immSize), dstOperand))
+	immText := fmt.Sprintf("#%s", formatImmediate(immediate, immSize))
+	setInstruction(data, inst, offset, fmt.Sprintf("%s.%s", mnemonic, sizeStr), fmt.Sprintf("%s, %s", immText, dstOperand), immediateOperand(immText, immediate, immSize), dstMeta)
 	return nil
 }
 
@@ -73,11 +74,11 @@ func decodeAddressRegisterArithmetic(mnemonic string, data []byte, opcode uint16
 		sizeBytes = 4
 	}
 
-	srcOperand, offset, err := decodeEAWithSize(data, 2, srcMode, srcReg, sizeBytes)
+	srcOperand, offset, srcMeta, err := decodeEAWithSize(data, 2, srcMode, srcReg, sizeBytes)
 	if err != nil {
 		return err
 	}
 
-	setInstruction(data, inst, offset, mnemonic+"A."+sizeStr, fmt.Sprintf("%s, A%d", srcOperand, dstReg))
+	setInstruction(data, inst, offset, mnemonic+"A."+sizeStr, fmt.Sprintf("%s, A%d", srcOperand, dstReg), srcMeta, registerOperand(RegisterKindAddress, dstReg))
 	return nil
 }

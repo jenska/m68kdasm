@@ -26,21 +26,24 @@ func decodeBitset(mn string, data []byte, opcode uint16, inst *Instruction) erro
 	reg := uint8(opcode & 0x7)
 	offset := 2
 	var bitNumStr string
+	var bitOperand Operand
 	if (opcode>>8)&0x1 == 1 {
 		bitReg := uint8((opcode >> 9) & 0x7)
 		bitNumStr = fmt.Sprintf("D%d", bitReg)
+		bitOperand = registerOperand(RegisterKindData, bitReg)
 	} else {
-		if len(data) < offset+2 {
-			return fmt.Errorf("insufficient data for BSET")
+		if err := requireLength(data, offset+2, mn+" immediate bit number"); err != nil {
+			return err
 		}
 		bitNum := binary.BigEndian.Uint16(data[offset : offset+2])
 		bitNumStr = fmt.Sprintf("#%d", bitNum&0xFF)
 		offset += 2
+		bitOperand = immediateOperand(bitNumStr, uint32(bitNum&0xFF), 1)
 	}
-	operand, offset, err := decodeEA(data, offset, mode, reg)
+	operand, offset, eaMeta, err := decodeEA(data, offset, mode, reg)
 	if err != nil {
 		return err
 	}
-	setInstruction(data, inst, offset, mn, fmt.Sprintf("%s, %s", bitNumStr, operand))
+	setInstruction(data, inst, offset, mn, fmt.Sprintf("%s, %s", bitNumStr, operand), bitOperand, eaMeta)
 	return nil
 }
