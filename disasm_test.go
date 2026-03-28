@@ -179,6 +179,41 @@ func TestDecodeRegressionRawOpcodes(t *testing.T) {
 			data: []byte{0x93, 0xC8},
 			want: "SUBA.L A0, A1",
 		},
+		{
+			name: "MOVEM register list decode",
+			data: []byte{0x4C, 0xDF, 0x0C, 0x04},
+			want: "MOVEM.L (A7)+, D2/A2-A3",
+		},
+		{
+			name: "SWAP D0",
+			data: []byte{0x48, 0x40},
+			want: "SWAP D0",
+		},
+		{
+			name: "BEQ.S short branch 1",
+			data: []byte{0x67, 0x06},
+			want: "BEQ.S $0008",
+		},
+		{
+			name: "BEQ.S short branch 2",
+			data: []byte{0x67, 0x12},
+			want: "BEQ.S $0014",
+		},
+		{
+			name: "BEQ.S short branch 3",
+			data: []byte{0x67, 0x02},
+			want: "BEQ.S $0004",
+		},
+		{
+			name: "BSR.W word branch",
+			data: []byte{0x61, 0x00, 0xFE, 0xF0},
+			want: "BSR.W $FFFFFEF4",
+		},
+		{
+			name: "BRA.S mnemonic",
+			data: []byte{0x60, 0x3C},
+			want: "BRA.S $003E",
+		},
 	}
 
 	for _, tc := range testCases {

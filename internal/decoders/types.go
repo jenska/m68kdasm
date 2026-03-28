@@ -7,6 +7,7 @@ const (
 	// masks
 	maskFFFF  = 0xFFFF
 	maskFFF0  = 0xFFF0
+	maskFFF8  = 0xFFF8 // SWAP instruction mask
 	maskF1F0  = 0xF1F0
 	maskF1C0  = 0xF1C0
 	maskF100  = 0xF100
@@ -239,6 +240,7 @@ var opcodeBuckets = [16][]OpcodePattern{
 		masked(maskFFC0, valJSR, decodeJSR),        // JSR
 		masked(maskFFC0, valJMP, decodeJMP),        // JMP
 		masked(maskF1C0, valLEA, decodeLEA),        // LEA
+		masked(maskFFF8, valPEA, decodeSWAP),       // SWAP
 		masked(maskFFC0, valPEA, decodePEA),        // PEA
 	},
 	0x6: {

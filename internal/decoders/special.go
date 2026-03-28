@@ -28,6 +28,13 @@ func decodePEA(data []byte, opcode uint16, inst *Instruction) error {
 	return nil
 }
 
+func decodeSWAP(data []byte, opcode uint16, inst *Instruction) error {
+	reg := uint8(opcode & 0x7)
+	regText := fmt.Sprintf("D%d", reg)
+	setInstruction(data, inst, 2, "SWAP", regText, registerOperand(RegisterKindData, reg))
+	return nil
+}
+
 func decodeSTOP(data []byte, opcode uint16, inst *Instruction) error {
 	if err := requireLength(data, 4, "STOP immediate"); err != nil {
 		return err
@@ -50,29 +57,16 @@ func decodeTRAPV(data []byte, opcode uint16, inst *Instruction) error {
 	return nil
 }
 
-func formatRegisterList(regListMask uint16, direction uint16) (string, []string) {
+func formatRegisterList(regListMask uint16) (string, []string) {
 	registers := []string{}
-	if direction == 0 {
-		for i := 0; i < 8; i++ {
-			if regListMask&(1<<uint(i)) != 0 {
-				registers = append(registers, fmt.Sprintf("D%d", i))
-			}
+	for i := 0; i < 8; i++ {
+		if regListMask&(1<<uint(i)) != 0 {
+			registers = append(registers, fmt.Sprintf("D%d", i))
 		}
-		for i := 0; i < 8; i++ {
-			if regListMask&(1<<uint(8+i)) != 0 {
-				registers = append(registers, fmt.Sprintf("A%d", i))
-			}
-		}
-	} else {
-		for i := 0; i < 8; i++ {
-			if regListMask&(1<<uint(15-i)) != 0 {
-				registers = append(registers, fmt.Sprintf("A%d", i))
-			}
-		}
-		for i := 0; i < 8; i++ {
-			if regListMask&(1<<uint(7-i)) != 0 {
-				registers = append(registers, fmt.Sprintf("D%d", i))
-			}
+	}
+	for i := 0; i < 8; i++ {
+		if regListMask&(1<<uint(8+i)) != 0 {
+			registers = append(registers, fmt.Sprintf("A%d", i))
 		}
 	}
 	return formatRegisterRange(registers), registers

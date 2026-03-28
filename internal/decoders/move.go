@@ -93,7 +93,7 @@ func decodeMOVEM(data []byte, opcode uint16, inst *Instruction) error {
 			return err
 		}
 	}
-	regListText, registers := formatRegisterList(regListMask, direction)
+	regListText, registers := formatRegisterList(regListMask)
 	regListMeta := registerListOperand(regListText, registers)
 	if direction == 0 {
 		setInstruction(data, inst, offset, "MOVEM."+sizeStr, fmt.Sprintf("%s, %s", regListText, addrModeStr), regListMeta, addrModeMeta)
