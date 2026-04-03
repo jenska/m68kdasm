@@ -40,7 +40,7 @@ func decodeBitset(mn string, data []byte, opcode uint16, inst *Instruction) erro
 		offset += 2
 		bitOperand = immediateOperand(bitNumStr, uint32(bitNum&0xFF), 1)
 	}
-	operand, offset, eaMeta, err := decodeEA(data, offset, mode, reg)
+	operand, offset, eaMeta, err := decodeEA(data, inst.Address, offset, mode, reg)
 	if err != nil {
 		return err
 	}

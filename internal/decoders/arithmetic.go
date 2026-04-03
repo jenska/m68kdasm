@@ -46,7 +46,7 @@ func decodeImmediateBinaryOp(mnemonic string, data []byte, opcode uint16, inst *
 		return err
 	}
 
-	dstOperand, offset, dstMeta, err := decodeEA(data, offset, dstMode, dstReg)
+	dstOperand, offset, dstMeta, err := decodeEA(data, inst.Address, offset, dstMode, dstReg)
 	if err != nil {
 		return err
 	}
@@ -74,7 +74,7 @@ func decodeAddressRegisterArithmetic(mnemonic string, data []byte, opcode uint16
 		sizeBytes = 4
 	}
 
-	srcOperand, offset, srcMeta, err := decodeEAWithSize(data, 2, srcMode, srcReg, sizeBytes)
+	srcOperand, offset, srcMeta, err := decodeEAWithSize(data, inst.Address, 2, srcMode, srcReg, sizeBytes)
 	if err != nil {
 		return err
 	}

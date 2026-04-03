@@ -54,16 +54,17 @@ func setInstruction(data []byte, inst *Instruction, size int, mnemonic, operands
 	populateMetadata(inst, mnemonic, structuredOperands)
 }
 
-func decodeEA(data []byte, offset int, mode, reg uint8) (string, int, Operand, error) {
-	return decodeEAWithSize(data, offset, mode, reg, 2)
+func decodeEA(data []byte, address uint32, offset int, mode, reg uint8) (string, int, Operand, error) {
+	return decodeEAWithSize(data, address, offset, mode, reg, 2)
 }
 
-func decodeEAWithSize(data []byte, offset int, mode, reg uint8, operandSize int) (string, int, Operand, error) {
+func decodeEAWithSize(data []byte, address uint32, offset int, mode, reg uint8, operandSize int) (string, int, Operand, error) {
 	operand, extraWords, structured, err := decodeAddressingMode(data[offset:], mode, reg, operandSize)
 	if err != nil {
 		return "", offset, Operand{}, err
 	}
-	return operand, offset + extraWords*2, structured, nil
+	nextOffset := offset + extraWords*2
+	return operand, nextOffset, resolveEffectiveAddress(address, nextOffset, structured), nil
 }
 
 func decodeDirectedBinaryOp(mnemonic string, data []byte, opcode uint16, inst *Instruction) error {
@@ -78,7 +79,7 @@ func decodeDirectedBinaryOp(mnemonic string, data []byte, opcode uint16, inst *I
 	srcMode := uint8((opcode >> 3) & 0x7)
 	srcReg := uint8(opcode & 0x7)
 
-	srcOperand, offset, srcMeta, err := decodeEAWithSize(data, 2, srcMode, srcReg, operandSize)
+	srcOperand, offset, srcMeta, err := decodeEAWithSize(data, inst.Address, 2, srcMode, srcReg, operandSize)
 	if err != nil {
 		return err
 	}
@@ -242,6 +243,24 @@ func signedImmediateValue(value uint32, size int) int32 {
 	default:
 		return int32(value)
 	}
+}
+
+func resolveEffectiveAddress(address uint32, nextOffset int, operand Operand) Operand {
+	if operand.EffectiveAddress == nil {
+		return operand
+	}
+
+	ea := *operand.EffectiveAddress
+	switch ea.Kind {
+	case EAKindPCDisplacement, EAKindPCIndex:
+		if ea.Displacement != nil {
+			target := uint32(int32(address) + int32(nextOffset) + *ea.Displacement)
+			ea.ResolvedAddress = uint32Ptr(target)
+		}
+	}
+
+	operand.EffectiveAddress = &ea
+	return operand
 }
 
 func registerPrefix(kind RegisterKind) string {

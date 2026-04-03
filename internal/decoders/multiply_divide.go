@@ -22,7 +22,7 @@ func decodeMulDiv(mn string, data []byte, opcode uint16, inst *Instruction) erro
 	dstReg := uint8((opcode >> 9) & 0x7)
 	srcMode := uint8((opcode >> 3) & 0x7)
 	srcReg := uint8(opcode & 0x7)
-	srcStr, offset, srcMeta, err := decodeEA(data, 2, srcMode, srcReg)
+	srcStr, offset, srcMeta, err := decodeEA(data, inst.Address, 2, srcMode, srcReg)
 	if err != nil {
 		return err
 	}

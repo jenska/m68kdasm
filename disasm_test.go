@@ -374,3 +374,74 @@ func TestDecodeSymbolizerFormatsResolvedAddresses(t *testing.T) {
 		t.Fatalf("Rohoperand wurde unerwartet überschrieben: %+v", inst.Metadata.Operands[0])
 	}
 }
+
+func TestDecodeSymbolizerFormatsPCRelativeAddresses(t *testing.T) {
+	data := []byte{0x4E, 0xBA, 0x00, 0x0E} // JSR (14,PC) at 0x1000 resolves to 0x1012
+
+	inst, err := DecodeWithOptions(data, 0x1000, DecodeOptions{
+		Symbolizer: SymbolizeFunc(func(address uint32) (string, bool) {
+			if address == 0x1012 {
+				return "_pc_target", true
+			}
+			return "", false
+		}),
+	})
+	if err != nil {
+		t.Fatalf("DecodeWithOptions-Fehler: %v", err)
+	}
+
+	if got := inst.Assembly(); got != "JSR _pc_target" {
+		t.Fatalf("Unerwartete symbolisierte Assembly: %s", got)
+	}
+	if inst.Metadata.Operands[0].Text != "(14,PC)" {
+		t.Fatalf("Rohoperand wurde unerwartet überschrieben: %+v", inst.Metadata.Operands[0])
+	}
+	resolved := inst.Metadata.Operands[0].EffectiveAddress.ResolvedAddress
+	if resolved == nil || *resolved != 0x1012 {
+		t.Fatalf("PC-relatives Ziel wurde nicht korrekt aufgelöst: %+v", inst.Metadata.Operands[0].EffectiveAddress)
+	}
+}
+
+func TestDecodeMOVEMPredecrementRegisterList(t *testing.T) {
+	data := []byte{0x48, 0xE7, 0x80, 0x80} // MOVEM.L D0/A0, -(A7)
+
+	inst, err := Decode(data, 0)
+	if err != nil {
+		t.Fatalf("Decode-Fehler: %v", err)
+	}
+
+	if got := inst.Assembly(); got != "MOVEM.L D0/A0, -(A7)" {
+		t.Fatalf("Unerwartete MOVEM-Dekodierung: %s", got)
+	}
+	if len(inst.Metadata.Operands) != 2 || len(inst.Metadata.Operands[0].RegisterList) != 2 {
+		t.Fatalf("Unerwartete MOVEM-Metadaten: %+v", inst.Metadata.Operands)
+	}
+}
+
+func TestDecodeAbsoluteShortMetadataSignExtendsAddress(t *testing.T) {
+	data := []byte{0x30, 0x38, 0xFF, 0x80} // MOVE.W $FF80.W, D0
+
+	inst, err := DecodeWithOptions(data, 0, DecodeOptions{
+		Symbolizer: SymbolizeFunc(func(address uint32) (string, bool) {
+			if address == 0xFFFFFF80 {
+				return "_neg_short", true
+			}
+			return "", false
+		}),
+	})
+	if err != nil {
+		t.Fatalf("DecodeWithOptions-Fehler: %v", err)
+	}
+
+	if got := inst.Assembly(); got != "MOVE.W _neg_short, D0" {
+		t.Fatalf("Unerwartete symbolisierte Assembly: %s", got)
+	}
+
+	ea := inst.Metadata.Operands[0].EffectiveAddress
+	if ea == nil || ea.AbsoluteAddress == nil || *ea.AbsoluteAddress != 0xFFFFFF80 {
+		t.Fatalf("Absolute Short wurde nicht sign-erweitert: %+v", ea)
+	}
+	if ea.ResolvedAddress == nil || *ea.ResolvedAddress != 0xFFFFFF80 {
+		t.Fatalf("ResolvedAddress wurde nicht sign-erweitert: %+v", ea)
+	}
+}

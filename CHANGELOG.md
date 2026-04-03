@@ -5,6 +5,16 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.2] - 2026-04-03
+
+### Fixed
+- **MOVEM predecrement register lists**: Fixed reversed register-mask decoding for register-to-memory predecrement forms. `MOVEM.L D0/A0, -(A7)` now disassembles correctly instead of decoding as `MOVEM.L D7/A7, -(A7)`.
+- **PC-relative symbolization metadata**: PC-relative effective addresses now populate `ResolvedAddress`, allowing `DecodeOptions.Symbolizer` to resolve operands such as `JSR (disp,PC)` and `LEA (disp,PC), Ax`.
+- **Absolute short address resolution**: Absolute short operands now sign-extend correctly in structured metadata, so `$FF80.W` resolves to `0xFFFFFF80` instead of `0x0000FF80`.
+
+### Added
+- Regression tests for MOVEM predecrement decoding, PC-relative symbolization, and absolute short address sign extension.
+
 ## [1.0.1] - 2026-03-28
 
 ### Fixed

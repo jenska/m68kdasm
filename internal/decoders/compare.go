@@ -23,7 +23,7 @@ func decodeCMP(data []byte, opcode uint16, inst *Instruction) error {
 	srcMode := uint8((opcode >> 3) & 0x7)
 	srcReg := uint8(opcode & 0x7)
 
-	srcStr, offset, srcMeta, err := decodeEAWithSize(data, 2, srcMode, srcReg, sizeBytes)
+	srcStr, offset, srcMeta, err := decodeEAWithSize(data, inst.Address, 2, srcMode, srcReg, sizeBytes)
 	if err != nil {
 		return err
 	}
@@ -44,7 +44,7 @@ func decodeCMPA(data []byte, opcode uint16, inst *Instruction) error {
 		sizeBytes = 4
 	}
 
-	srcStr, offset, srcMeta, err := decodeEAWithSize(data, 2, srcMode, srcReg, sizeBytes)
+	srcStr, offset, srcMeta, err := decodeEAWithSize(data, inst.Address, 2, srcMode, srcReg, sizeBytes)
 	if err != nil {
 		return err
 	}
@@ -83,7 +83,7 @@ func decodeCMPI(data []byte, opcode uint16, inst *Instruction) error {
 	if err != nil {
 		return err
 	}
-	dstOperand, offset, dstMeta, err := decodeEA(data, offset, dstMode, dstReg)
+	dstOperand, offset, dstMeta, err := decodeEA(data, inst.Address, offset, dstMode, dstReg)
 	if err != nil {
 		return err
 	}

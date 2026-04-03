@@ -47,7 +47,7 @@ func decodeMOVE(data []byte, opcode uint16, inst *Instruction) error {
 	offset := 2
 
 	// Decode source addressing mode
-	srcStr, offset, srcMeta, err := decodeEAWithSize(data, offset, srcMode, srcReg, sizeBytes)
+	srcStr, offset, srcMeta, err := decodeEAWithSize(data, inst.Address, offset, srcMode, srcReg, sizeBytes)
 	if err != nil {
 		return err
 	}
@@ -61,7 +61,7 @@ func decodeMOVE(data []byte, opcode uint16, inst *Instruction) error {
 	}
 
 	// Decode destination addressing mode
-	dstStr, offset, dstMeta, err := decodeEA(data, offset, dstMode, dstReg)
+	dstStr, offset, dstMeta, err := decodeEA(data, inst.Address, offset, dstMode, dstReg)
 	if err != nil {
 		return err
 	}
@@ -88,12 +88,12 @@ func decodeMOVEM(data []byte, opcode uint16, inst *Instruction) error {
 	var addrModeMeta Operand
 	var err error
 	if mode != 0 || reg != 0 {
-		addrModeStr, offset, addrModeMeta, err = decodeEA(data, offset, mode, reg)
+		addrModeStr, offset, addrModeMeta, err = decodeEA(data, inst.Address, offset, mode, reg)
 		if err != nil {
 			return err
 		}
 	}
-	regListText, registers := formatRegisterList(regListMask)
+	regListText, registers := formatRegisterList(regListMask, direction == 0 && mode == 4)
 	regListMeta := registerListOperand(regListText, registers)
 	if direction == 0 {
 		setInstruction(data, inst, offset, "MOVEM."+sizeStr, fmt.Sprintf("%s, %s", regListText, addrModeStr), regListMeta, addrModeMeta)

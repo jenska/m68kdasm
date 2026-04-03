@@ -38,7 +38,7 @@ func decodeLogicalI(mn string, data []byte, opcode uint16, inst *Instruction) er
 	if err != nil {
 		return err
 	}
-	dstOperand, offset, dstMeta, err := decodeEA(data, offset, dstMode, dstReg)
+	dstOperand, offset, dstMeta, err := decodeEA(data, inst.Address, offset, dstMode, dstReg)
 	if err != nil {
 		return err
 	}

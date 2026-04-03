@@ -12,6 +12,7 @@ A Go disassembler for the Motorola 68000 CPU.
 - Exact decoded instruction length via `Instruction.Size`.
 - Decoded extension words via `Instruction.ExtensionWords`.
 - Structured metadata for mnemonic, operands, branch targets, immediates, and effective-address kinds.
+- Resolved effective-address targets for absolute and PC-relative operands.
 - Slice, `io.ReaderAt`, and callback-based decode entry points.
 - Precise partial-decode errors that report missing-byte counts.
 - Optional symbol formatting hooks for resolved addresses.
@@ -118,6 +119,7 @@ Useful metadata fields:
 - `Instruction.Metadata.BranchTarget`: resolved branch target when applicable.
 - `Instruction.Metadata.ImmediateValues`: immediate operands collected in structured form.
 - `Instruction.Metadata.Operands`: per-operand metadata, including effective-address details.
+- `Operand.EffectiveAddress.ResolvedAddress`: computed target for absolute and PC-relative effective addresses when available.
 
 ## Streaming Decode
 
@@ -188,6 +190,27 @@ This is useful for:
 - symbolized trace logs
 - debugger disassembly views
 - breakpoint or stop-condition logic based on structured targets
+
+PC-relative operands participate in the same symbolization flow as absolute addresses once their resolved target is known:
+
+```go
+inst, err := m68kdasm.DecodeWithOptions([]byte{
+	0x4E, 0xBA, 0x00, 0x0E, // JSR (14,PC)
+}, 0x1000, m68kdasm.DecodeOptions{
+	Symbolizer: m68kdasm.SymbolizeFunc(func(address uint32) (string, bool) {
+		if address == 0x1012 {
+			return "_pc_target", true
+		}
+		return "", false
+	}),
+})
+if err != nil {
+	log.Fatal(err)
+}
+
+fmt.Println(inst.Assembly())                                // JSR _pc_target
+fmt.Println(*inst.Metadata.Operands[0].EffectiveAddress.ResolvedAddress) // 4114
+```
 
 ## Partial Decode Errors
 
