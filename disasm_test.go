@@ -376,7 +376,7 @@ func TestDecodeSymbolizerFormatsResolvedAddresses(t *testing.T) {
 }
 
 func TestDecodeSymbolizerFormatsPCRelativeAddresses(t *testing.T) {
-	data := []byte{0x4E, 0xBA, 0x00, 0x0E} // JSR (14,PC) at 0x1000 resolves to 0x1012
+	data := []byte{0x4E, 0xBA, 0x00, 0x0E} // JSR (16,PC) at 0x1000 resolves to 0x1012
 
 	inst, err := DecodeWithOptions(data, 0x1000, DecodeOptions{
 		Symbolizer: SymbolizeFunc(func(address uint32) (string, bool) {
@@ -393,7 +393,7 @@ func TestDecodeSymbolizerFormatsPCRelativeAddresses(t *testing.T) {
 	if got := inst.Assembly(); got != "JSR _pc_target" {
 		t.Fatalf("Unerwartete symbolisierte Assembly: %s", got)
 	}
-	if inst.Metadata.Operands[0].Text != "(14,PC)" {
+	if inst.Metadata.Operands[0].Text != "(16,PC)" {
 		t.Fatalf("Rohoperand wurde unerwartet überschrieben: %+v", inst.Metadata.Operands[0])
 	}
 	resolved := inst.Metadata.Operands[0].EffectiveAddress.ResolvedAddress

@@ -141,7 +141,10 @@ func decodeAddressingMode(data []byte, mode, reg uint8, operandSize int) (string
 				return "", 0, Operand{}, err
 			}
 			displacement := int16(binary.BigEndian.Uint16(data[:2]))
-			text := fmt.Sprintf("(%d,PC)", displacement)
+			// Render the canonical source-level displacement accepted by m68kasm.
+			// The encoded extension word is relative to the extension word base,
+			// while assembly syntax is relative to the opcode address (+2 bytes).
+			text := fmt.Sprintf("(%d,PC)", displacement+2)
 			return text, 1, effectiveAddressOperand(text, EffectiveAddress{
 				Kind:         EAKindPCDisplacement,
 				Mode:         mode,
@@ -156,7 +159,7 @@ func decodeAddressingMode(data []byte, mode, reg uint8, operandSize int) (string
 			}
 			indexWord := binary.BigEndian.Uint16(data[:2])
 			indexType, indexReg, indexSize, displacement := decodeIndexWord(indexWord)
-			text := fmt.Sprintf("(%d,PC,%s%d.%c)", displacement, indexType, indexReg, indexSize)
+			text := fmt.Sprintf("(%d,PC,%s%d.%c)", displacement+2, indexType, indexReg, indexSize)
 			return text, 1, effectiveAddressOperand(text, EffectiveAddress{
 				Kind:         EAKindPCIndex,
 				Mode:         mode,

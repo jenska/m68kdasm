@@ -195,7 +195,7 @@ PC-relative operands participate in the same symbolization flow as absolute addr
 
 ```go
 inst, err := m68kdasm.DecodeWithOptions([]byte{
-	0x4E, 0xBA, 0x00, 0x0E, // JSR (14,PC)
+	0x4E, 0xBA, 0x00, 0x0E, // JSR (16,PC)
 }, 0x1000, m68kdasm.DecodeOptions{
 	Symbolizer: m68kdasm.SymbolizeFunc(func(address uint32) (string, bool) {
 		if address == 0x1012 {
