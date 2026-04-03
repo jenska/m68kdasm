@@ -41,5 +41,5 @@ jobs:
       - name: Run tests
         run: go test ./... -v
 
-      - name: Build CLI
-        run: go build -v ./cmd/m68kdasm
+      - name: Build
+        run: go build -v ./...

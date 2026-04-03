@@ -1,4 +1,4 @@
-.PHONY: all build test clean fmt
+.PHONY: all build test clean fmt ci
 
 all: test build
 
@@ -10,6 +10,12 @@ test:
 
 fmt:
 	go fmt ./...
+
+ci:
+	go mod verify
+	go vet ./...
+	go test -v ./...
+	go build -v ./...
 
 clean:
 	go clean
