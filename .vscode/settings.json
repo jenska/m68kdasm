@@ -1,6 +1,0 @@
-{
-    "makefile.configureOnOpen": false,
-    "chat.tools.terminal.autoApprove": {
-        "go": true
-    }
-}
