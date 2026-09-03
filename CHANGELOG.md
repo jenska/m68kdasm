@@ -5,12 +5,19 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [1.1.0] - 2026-09-03
 
 ### Changed
 - **Internal simplification**: the structured decode types (`Operand`, `Register`, `EffectiveAddress`, …) are now defined once in `internal/decoders` and re-exported from the public package via type aliases, removing ~150 lines of value-copying glue. No API or behavior change.
-- Consolidated duplicated instruction decoders (immediate ALU ops, address-register ALU ops, unary EA ops, predecrement/postincrement operands) behind shared helpers.
-- Minimum Go version raised to 1.27; adopted `new(expr)` and `range`-over-int.
+- Consolidated duplicated instruction decoders (immediate ALU ops, address-register ALU ops, unary EA ops, predecrement/postincrement operands) behind shared helpers. Non-test code shrinks from ~2270 to ~2000 lines.
+- **Minimum Go version raised to 1.27.** Adopted the `new(expr)` builtin and `range`-over-int; `DisassembleRange` now preallocates its result slice.
+- Removed a stray root `go.yml` that duplicated the real CI workflow.
+
+## [1.0.3] - 2026-04-03
+
+### Fixed
+- **PC-relative symbolizer regression**: restored correct PC-relative target resolution.
+- CI build fix.
 
 ## [1.0.2] - 2026-04-03
 
