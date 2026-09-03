@@ -1,6 +1,10 @@
 package m68kdasm
 
-import "fmt"
+import (
+	"fmt"
+
+	"github.com/jenska/m68kdasm/internal/decoders"
+)
 
 type DecodeOptions struct {
 	Symbolizer Symbolizer
@@ -18,87 +22,44 @@ func (f SymbolizeFunc) Symbolize(address uint32) (string, bool) {
 
 type ReadFunc func(address uint32, p []byte) (int, error)
 
-type DecodeMetadata struct {
-	Mnemonic        string
-	MnemonicBase    string
-	SizeSuffix      string
-	Operands        []Operand
-	BranchTarget    *uint32
-	ImmediateValues []ImmediateValue
-}
-
-type OperandKind string
-
-const (
-	OperandKindRegister      OperandKind = "register"
-	OperandKindImmediate     OperandKind = "immediate"
-	OperandKindEffectiveAddr OperandKind = "effective_address"
-	OperandKindRegisterList  OperandKind = "register_list"
-	OperandKindBranchTarget  OperandKind = "branch_target"
+// The structured decode types are defined once in the internal decoders package
+// and re-exported here so callers have a single source of truth.
+type (
+	DecodeMetadata       = decoders.Metadata
+	Operand              = decoders.Operand
+	OperandKind          = decoders.OperandKind
+	Register             = decoders.Register
+	RegisterKind         = decoders.RegisterKind
+	ImmediateValue       = decoders.ImmediateValue
+	EffectiveAddress     = decoders.EffectiveAddress
+	EffectiveAddressKind = decoders.EffectiveAddressKind
+	IndexRegister        = decoders.IndexRegister
 )
 
-type RegisterKind string
-
 const (
-	RegisterKindData    RegisterKind = "data"
-	RegisterKindAddress RegisterKind = "address"
-	RegisterKindPC      RegisterKind = "pc"
+	OperandKindRegister      = decoders.OperandKindRegister
+	OperandKindImmediate     = decoders.OperandKindImmediate
+	OperandKindEffectiveAddr = decoders.OperandKindEffectiveAddr
+	OperandKindRegisterList  = decoders.OperandKindRegisterList
+	OperandKindBranchTarget  = decoders.OperandKindBranchTarget
+
+	RegisterKindData    = decoders.RegisterKindData
+	RegisterKindAddress = decoders.RegisterKindAddress
+	RegisterKindPC      = decoders.RegisterKindPC
+
+	EAKindDataRegisterDirect    = decoders.EAKindDataRegisterDirect
+	EAKindAddressRegisterDirect = decoders.EAKindAddressRegisterDirect
+	EAKindAddressIndirect       = decoders.EAKindAddressIndirect
+	EAKindPostIncrement         = decoders.EAKindPostIncrement
+	EAKindPreDecrement          = decoders.EAKindPreDecrement
+	EAKindDisplacement          = decoders.EAKindDisplacement
+	EAKindIndex                 = decoders.EAKindIndex
+	EAKindAbsoluteShort         = decoders.EAKindAbsoluteShort
+	EAKindAbsoluteLong          = decoders.EAKindAbsoluteLong
+	EAKindPCDisplacement        = decoders.EAKindPCDisplacement
+	EAKindPCIndex               = decoders.EAKindPCIndex
+	EAKindImmediate             = decoders.EAKindImmediate
 )
-
-type Register struct {
-	Kind   RegisterKind
-	Number uint8
-}
-
-type ImmediateValue struct {
-	Value  uint32
-	Signed int32
-	Size   uint8
-}
-
-type EffectiveAddressKind string
-
-const (
-	EAKindDataRegisterDirect    EffectiveAddressKind = "data_register_direct"
-	EAKindAddressRegisterDirect EffectiveAddressKind = "address_register_direct"
-	EAKindAddressIndirect       EffectiveAddressKind = "address_indirect"
-	EAKindPostIncrement         EffectiveAddressKind = "post_increment"
-	EAKindPreDecrement          EffectiveAddressKind = "pre_decrement"
-	EAKindDisplacement          EffectiveAddressKind = "displacement"
-	EAKindIndex                 EffectiveAddressKind = "index"
-	EAKindAbsoluteShort         EffectiveAddressKind = "absolute_short"
-	EAKindAbsoluteLong          EffectiveAddressKind = "absolute_long"
-	EAKindPCDisplacement        EffectiveAddressKind = "pc_displacement"
-	EAKindPCIndex               EffectiveAddressKind = "pc_index"
-	EAKindImmediate             EffectiveAddressKind = "immediate"
-)
-
-type IndexRegister struct {
-	Register Register
-	Size     string
-}
-
-type EffectiveAddress struct {
-	Kind            EffectiveAddressKind
-	Mode            uint8
-	Register        uint8
-	Base            *Register
-	Displacement    *int32
-	AbsoluteAddress *uint32
-	ResolvedAddress *uint32
-	Immediate       *ImmediateValue
-	Index           *IndexRegister
-}
-
-type Operand struct {
-	Text             string
-	Kind             OperandKind
-	Register         *Register
-	Immediate        *ImmediateValue
-	EffectiveAddress *EffectiveAddress
-	RegisterList     []string
-	BranchTarget     *uint32
-}
 
 type PartialDecodeError struct {
 	Address uint32

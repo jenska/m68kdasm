@@ -82,7 +82,7 @@ func decodeAddressingMode(data []byte, mode, reg uint8, operandSize int) (string
 			Mode:         mode,
 			Register:     reg,
 			Base:         &Register{Kind: RegisterKindAddress, Number: reg},
-			Displacement: int32Ptr(int32(displacement)),
+			Displacement: new(int32(displacement)),
 		}), nil
 
 	case 6: // Address Register Indirect with Index
@@ -97,7 +97,7 @@ func decodeAddressingMode(data []byte, mode, reg uint8, operandSize int) (string
 			Mode:         mode,
 			Register:     reg,
 			Base:         &Register{Kind: RegisterKindAddress, Number: reg},
-			Displacement: int32Ptr(int32(displacement)),
+			Displacement: new(int32(displacement)),
 			Index: &IndexRegister{
 				Register: Register{Kind: parseIndexRegisterKind(indexType), Number: indexReg},
 				Size:     string(indexSize),
@@ -118,8 +118,8 @@ func decodeAddressingMode(data []byte, mode, reg uint8, operandSize int) (string
 				Kind:            EAKindAbsoluteShort,
 				Mode:            mode,
 				Register:        reg,
-				AbsoluteAddress: uint32Ptr(absolute),
-				ResolvedAddress: uint32Ptr(absolute),
+				AbsoluteAddress: new(absolute),
+				ResolvedAddress: new(absolute),
 			}), nil
 
 		case 1: // Absolute Long Address
@@ -132,8 +132,8 @@ func decodeAddressingMode(data []byte, mode, reg uint8, operandSize int) (string
 				Kind:            EAKindAbsoluteLong,
 				Mode:            mode,
 				Register:        reg,
-				AbsoluteAddress: uint32Ptr(addr),
-				ResolvedAddress: uint32Ptr(addr),
+				AbsoluteAddress: new(addr),
+				ResolvedAddress: new(addr),
 			}), nil
 
 		case 2: // Program Counter with Displacement
@@ -150,7 +150,7 @@ func decodeAddressingMode(data []byte, mode, reg uint8, operandSize int) (string
 				Mode:         mode,
 				Register:     reg,
 				Base:         &Register{Kind: RegisterKindPC},
-				Displacement: int32Ptr(int32(displacement)),
+				Displacement: new(int32(displacement)),
 			}), nil
 
 		case 3: // Program Counter with Index
@@ -165,7 +165,7 @@ func decodeAddressingMode(data []byte, mode, reg uint8, operandSize int) (string
 				Mode:         mode,
 				Register:     reg,
 				Base:         &Register{Kind: RegisterKindPC},
-				Displacement: int32Ptr(int32(displacement)),
+				Displacement: new(int32(displacement)),
 				Index: &IndexRegister{
 					Register: Register{Kind: parseIndexRegisterKind(indexType), Number: indexReg},
 					Size:     string(indexSize),
@@ -186,9 +186,7 @@ func decodeAddressingMode(data []byte, mode, reg uint8, operandSize int) (string
 					Register:  reg,
 					Immediate: immediatePtr(value, operandSize),
 				}), nil
-			case 1:
-				fallthrough
-			case 2:
+			case 1, 2:
 				if err := requireLength(data, 2, "immediate"); err != nil {
 					return "", 0, Operand{}, err
 				}
@@ -249,14 +247,13 @@ func formatImmediateForMOVEQ(value int32) string {
 // decodeIndexWord extracts index register, type, size, and displacement from index word
 func decodeIndexWord(indexWord uint16) (indexType string, indexReg, indexSize uint8, displacement int8) {
 	indexType = "D"
-	if (indexWord>>15)&0x1 == 1 {
+	if indexWord&0x8000 != 0 {
 		indexType = "A"
 	}
 	indexReg = uint8((indexWord >> 12) & 0x7)
-	if (indexWord>>11)&0x1 == 1 {
+	indexSize = 'W'
+	if indexWord&0x0800 != 0 {
 		indexSize = 'L'
-	} else {
-		indexSize = 'W'
 	}
 	displacement = int8(indexWord & 0xFF)
 	return

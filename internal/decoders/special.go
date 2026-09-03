@@ -18,14 +18,7 @@ func decodeLEA(data []byte, opcode uint16, inst *Instruction) error {
 }
 
 func decodePEA(data []byte, opcode uint16, inst *Instruction) error {
-	mode := uint8((opcode >> 3) & 0x7)
-	reg := uint8(opcode & 0x7)
-	operand, offset, meta, err := decodeEA(data, inst.Address, 2, mode, reg)
-	if err != nil {
-		return err
-	}
-	setInstruction(data, inst, offset, "PEA", operand, meta)
-	return nil
+	return decodeUnaryEA("PEA", data, opcode, inst)
 }
 
 func decodeSWAP(data []byte, opcode uint16, inst *Instruction) error {
@@ -57,29 +50,24 @@ func decodeTRAPV(data []byte, opcode uint16, inst *Instruction) error {
 	return nil
 }
 
+// formatRegisterList expands a MOVEM register-list mask. When reverse is set the
+// mask is read most-significant-bit first (the -(An) predecrement encoding).
 func formatRegisterList(regListMask uint16, reverse bool) (string, []string) {
-	registers := []string{}
-	if reverse {
-		for i := 0; i < 8; i++ {
-			if regListMask&(1<<uint(15-i)) != 0 {
-				registers = append(registers, fmt.Sprintf("D%d", i))
-			}
+	bitFor := func(listIndex int) uint {
+		if reverse {
+			return uint(15 - listIndex)
 		}
-		for i := 0; i < 8; i++ {
-			if regListMask&(1<<uint(7-i)) != 0 {
-				registers = append(registers, fmt.Sprintf("A%d", i))
-			}
-		}
-		return formatRegisterRange(registers), registers
+		return uint(listIndex)
 	}
 
-	for i := 0; i < 8; i++ {
-		if regListMask&(1<<uint(i)) != 0 {
+	var registers []string
+	for i := range 8 {
+		if regListMask&(1<<bitFor(i)) != 0 {
 			registers = append(registers, fmt.Sprintf("D%d", i))
 		}
 	}
-	for i := 0; i < 8; i++ {
-		if regListMask&(1<<uint(8+i)) != 0 {
+	for i := range 8 {
+		if regListMask&(1<<bitFor(i+8)) != 0 {
 			registers = append(registers, fmt.Sprintf("A%d", i))
 		}
 	}

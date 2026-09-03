@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"strings"
 
 	"github.com/jenska/m68kdasm/internal/decoders"
 )
@@ -81,7 +82,9 @@ func DisassembleRange(data []byte, startAddress uint32) ([]Instruction, error) {
 }
 
 func DisassembleRangeWithOptions(data []byte, startAddress uint32, opts DecodeOptions) ([]Instruction, error) {
-	var instructions []Instruction
+	// Every instruction is at least one 16-bit word, so len(data)/2 is an upper
+	// bound on the instruction count.
+	instructions := make([]Instruction, 0, len(data)/2)
 	offset := 0
 
 	for offset < len(data) {
@@ -119,27 +122,7 @@ func decodeInstruction(initial []byte, address uint32, reader addressReader, opt
 	opcode := binary.BigEndian.Uint16(data[:2])
 	decoder := decoders.FindDecoder(opcode)
 	if decoder == nil {
-		return finalizeInstruction(&decoders.Instruction{
-			Address:  address,
-			Opcode:   opcode,
-			Mnemonic: "DC.W",
-			Operands: fmt.Sprintf("$%04X", opcode),
-			Size:     2,
-			Bytes:    data[:2],
-			Metadata: decoders.Metadata{
-				Mnemonic:     "DC.W",
-				MnemonicBase: "DC",
-				SizeSuffix:   "W",
-				Operands: []decoders.Operand{
-					{
-						Text:      fmt.Sprintf("$%04X", opcode),
-						Kind:      decoders.OperandKindImmediate,
-						Immediate: &decoders.ImmediateValue{Value: uint32(opcode), Signed: int32(int16(opcode)), Size: 2},
-					},
-				},
-				ImmediateValues: []decoders.ImmediateValue{{Value: uint32(opcode), Signed: int32(int16(opcode)), Size: 2}},
-			},
-		}, opts), nil
+		return finalizeInstruction(decoders.DecodeUnknown(data, address, opcode), opts), nil
 	}
 
 	for {
@@ -210,7 +193,7 @@ func finalizeInstruction(decoderInst *decoders.Instruction, opts DecodeOptions) 
 		Size:           decoderInst.Size,
 		Bytes:          append([]byte(nil), decoderInst.Bytes...),
 		ExtensionWords: append([]uint16(nil), decoderInst.ExtensionWords...),
-		Metadata:       convertMetadata(decoderInst.Metadata),
+		Metadata:       decoderInst.Metadata,
 	}
 
 	if opts.Symbolizer != nil && len(inst.Metadata.Operands) > 0 {
@@ -220,105 +203,12 @@ func finalizeInstruction(decoderInst *decoders.Instruction, opts DecodeOptions) 
 	return inst
 }
 
-func convertMetadata(meta decoders.Metadata) DecodeMetadata {
-	converted := DecodeMetadata{
-		Mnemonic:        meta.Mnemonic,
-		MnemonicBase:    meta.MnemonicBase,
-		SizeSuffix:      meta.SizeSuffix,
-		BranchTarget:    cloneUint32Ptr(meta.BranchTarget),
-		ImmediateValues: make([]ImmediateValue, len(meta.ImmediateValues)),
-		Operands:        make([]Operand, len(meta.Operands)),
-	}
-	for i, imm := range meta.ImmediateValues {
-		converted.ImmediateValues[i] = ImmediateValue{Value: imm.Value, Signed: imm.Signed, Size: imm.Size}
-	}
-	for i, operand := range meta.Operands {
-		converted.Operands[i] = convertOperand(operand)
-	}
-	return converted
-}
-
-func convertOperand(operand decoders.Operand) Operand {
-	converted := Operand{
-		Text:         operand.Text,
-		Kind:         OperandKind(operand.Kind),
-		RegisterList: append([]string(nil), operand.RegisterList...),
-		BranchTarget: cloneUint32Ptr(operand.BranchTarget),
-	}
-	if operand.Register != nil {
-		converted.Register = &Register{
-			Kind:   RegisterKind(operand.Register.Kind),
-			Number: operand.Register.Number,
-		}
-	}
-	if operand.Immediate != nil {
-		converted.Immediate = &ImmediateValue{
-			Value:  operand.Immediate.Value,
-			Signed: operand.Immediate.Signed,
-			Size:   operand.Immediate.Size,
-		}
-	}
-	if operand.EffectiveAddress != nil {
-		ea := &EffectiveAddress{
-			Kind:            EffectiveAddressKind(operand.EffectiveAddress.Kind),
-			Mode:            operand.EffectiveAddress.Mode,
-			Register:        operand.EffectiveAddress.Register,
-			Displacement:    cloneInt32Ptr(operand.EffectiveAddress.Displacement),
-			AbsoluteAddress: cloneUint32Ptr(operand.EffectiveAddress.AbsoluteAddress),
-			ResolvedAddress: cloneUint32Ptr(operand.EffectiveAddress.ResolvedAddress),
-		}
-		if operand.EffectiveAddress.Base != nil {
-			ea.Base = &Register{
-				Kind:   RegisterKind(operand.EffectiveAddress.Base.Kind),
-				Number: operand.EffectiveAddress.Base.Number,
-			}
-		}
-		if operand.EffectiveAddress.Immediate != nil {
-			ea.Immediate = &ImmediateValue{
-				Value:  operand.EffectiveAddress.Immediate.Value,
-				Signed: operand.EffectiveAddress.Immediate.Signed,
-				Size:   operand.EffectiveAddress.Immediate.Size,
-			}
-		}
-		if operand.EffectiveAddress.Index != nil {
-			ea.Index = &IndexRegister{
-				Register: Register{
-					Kind:   RegisterKind(operand.EffectiveAddress.Index.Register.Kind),
-					Number: operand.EffectiveAddress.Index.Register.Number,
-				},
-				Size: operand.EffectiveAddress.Index.Size,
-			}
-		}
-		converted.EffectiveAddress = ea
-	}
-	return converted
-}
-
-func cloneUint32Ptr(v *uint32) *uint32 {
-	if v == nil {
-		return nil
-	}
-	cloned := *v
-	return &cloned
-}
-
-func cloneInt32Ptr(v *int32) *int32 {
-	if v == nil {
-		return nil
-	}
-	cloned := *v
-	return &cloned
-}
-
 func formatOperands(operands []Operand, symbolizer Symbolizer) string {
-	rendered := make([]string, 0, len(operands))
-	for _, operand := range operands {
-		rendered = append(rendered, formatOperand(operand, symbolizer))
+	rendered := make([]string, len(operands))
+	for i, operand := range operands {
+		rendered[i] = formatOperand(operand, symbolizer)
 	}
-	if len(rendered) == 0 {
-		return ""
-	}
-	return joinOperands(rendered)
+	return strings.Join(rendered, ", ")
 }
 
 func formatOperand(operand Operand, symbolizer Symbolizer) string {
@@ -340,15 +230,4 @@ func formatOperand(operand Operand, symbolizer Symbolizer) string {
 		}
 	}
 	return operand.Text
-}
-
-func joinOperands(parts []string) string {
-	if len(parts) == 0 {
-		return ""
-	}
-	out := parts[0]
-	for _, part := range parts[1:] {
-		out += ", " + part
-	}
-	return out
 }
