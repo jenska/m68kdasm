@@ -82,7 +82,9 @@ func DisassembleRange(data []byte, startAddress uint32) ([]Instruction, error) {
 }
 
 func DisassembleRangeWithOptions(data []byte, startAddress uint32, opts DecodeOptions) ([]Instruction, error) {
-	var instructions []Instruction
+	// Every instruction is at least one 16-bit word, so len(data)/2 is an upper
+	// bound on the instruction count.
+	instructions := make([]Instruction, 0, len(data)/2)
 	offset := 0
 
 	for offset < len(data) {

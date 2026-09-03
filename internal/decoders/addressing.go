@@ -82,7 +82,7 @@ func decodeAddressingMode(data []byte, mode, reg uint8, operandSize int) (string
 			Mode:         mode,
 			Register:     reg,
 			Base:         &Register{Kind: RegisterKindAddress, Number: reg},
-			Displacement: int32Ptr(int32(displacement)),
+			Displacement: new(int32(displacement)),
 		}), nil
 
 	case 6: // Address Register Indirect with Index
@@ -97,7 +97,7 @@ func decodeAddressingMode(data []byte, mode, reg uint8, operandSize int) (string
 			Mode:         mode,
 			Register:     reg,
 			Base:         &Register{Kind: RegisterKindAddress, Number: reg},
-			Displacement: int32Ptr(int32(displacement)),
+			Displacement: new(int32(displacement)),
 			Index: &IndexRegister{
 				Register: Register{Kind: parseIndexRegisterKind(indexType), Number: indexReg},
 				Size:     string(indexSize),
@@ -118,8 +118,8 @@ func decodeAddressingMode(data []byte, mode, reg uint8, operandSize int) (string
 				Kind:            EAKindAbsoluteShort,
 				Mode:            mode,
 				Register:        reg,
-				AbsoluteAddress: uint32Ptr(absolute),
-				ResolvedAddress: uint32Ptr(absolute),
+				AbsoluteAddress: new(absolute),
+				ResolvedAddress: new(absolute),
 			}), nil
 
 		case 1: // Absolute Long Address
@@ -132,8 +132,8 @@ func decodeAddressingMode(data []byte, mode, reg uint8, operandSize int) (string
 				Kind:            EAKindAbsoluteLong,
 				Mode:            mode,
 				Register:        reg,
-				AbsoluteAddress: uint32Ptr(addr),
-				ResolvedAddress: uint32Ptr(addr),
+				AbsoluteAddress: new(addr),
+				ResolvedAddress: new(addr),
 			}), nil
 
 		case 2: // Program Counter with Displacement
@@ -150,7 +150,7 @@ func decodeAddressingMode(data []byte, mode, reg uint8, operandSize int) (string
 				Mode:         mode,
 				Register:     reg,
 				Base:         &Register{Kind: RegisterKindPC},
-				Displacement: int32Ptr(int32(displacement)),
+				Displacement: new(int32(displacement)),
 			}), nil
 
 		case 3: // Program Counter with Index
@@ -165,7 +165,7 @@ func decodeAddressingMode(data []byte, mode, reg uint8, operandSize int) (string
 				Mode:         mode,
 				Register:     reg,
 				Base:         &Register{Kind: RegisterKindPC},
-				Displacement: int32Ptr(int32(displacement)),
+				Displacement: new(int32(displacement)),
 				Index: &IndexRegister{
 					Register: Register{Kind: parseIndexRegisterKind(indexType), Number: indexReg},
 					Size:     string(indexSize),

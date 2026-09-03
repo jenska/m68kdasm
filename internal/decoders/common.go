@@ -252,16 +252,8 @@ func branchOperand(text string, target uint32) Operand {
 	return Operand{
 		Text:         text,
 		Kind:         OperandKindBranchTarget,
-		BranchTarget: uint32Ptr(target),
+		BranchTarget: new(target),
 	}
-}
-
-func uint32Ptr(v uint32) *uint32 {
-	return &v
-}
-
-func int32Ptr(v int32) *int32 {
-	return &v
 }
 
 func immediatePtr(value uint32, size int) *ImmediateValue {
@@ -295,7 +287,7 @@ func resolveEffectiveAddress(address uint32, nextOffset int, operand Operand) Op
 	case EAKindPCDisplacement, EAKindPCIndex:
 		if ea.Displacement != nil {
 			target := uint32(int32(address) + int32(nextOffset) + *ea.Displacement)
-			ea.ResolvedAddress = uint32Ptr(target)
+			ea.ResolvedAddress = new(target)
 		}
 	}
 

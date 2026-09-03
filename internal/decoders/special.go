@@ -61,12 +61,12 @@ func formatRegisterList(regListMask uint16, reverse bool) (string, []string) {
 	}
 
 	var registers []string
-	for i := 0; i < 8; i++ {
+	for i := range 8 {
 		if regListMask&(1<<bitFor(i)) != 0 {
 			registers = append(registers, fmt.Sprintf("D%d", i))
 		}
 	}
-	for i := 0; i < 8; i++ {
+	for i := range 8 {
 		if regListMask&(1<<bitFor(i+8)) != 0 {
 			registers = append(registers, fmt.Sprintf("A%d", i))
 		}

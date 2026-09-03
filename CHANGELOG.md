@@ -5,6 +5,13 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Changed
+- **Internal simplification**: the structured decode types (`Operand`, `Register`, `EffectiveAddress`, …) are now defined once in `internal/decoders` and re-exported from the public package via type aliases, removing ~150 lines of value-copying glue. No API or behavior change.
+- Consolidated duplicated instruction decoders (immediate ALU ops, address-register ALU ops, unary EA ops, predecrement/postincrement operands) behind shared helpers.
+- Minimum Go version raised to 1.27; adopted `new(expr)` and `range`-over-int.
+
 ## [1.0.2] - 2026-04-03
 
 ### Fixed
