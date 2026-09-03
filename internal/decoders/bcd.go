@@ -20,14 +20,8 @@ func decodeBCD(mn string, data []byte, opcode uint16, inst *Instruction) error {
 	}
 	srcText := fmt.Sprintf("-(A%d)", srcReg)
 	dstText := fmt.Sprintf("-(A%d)", dstReg)
-	setInstruction(data, inst, 2, mn, fmt.Sprintf("%s, %s", srcText, dstText), effectiveAddressOperand(srcText, EffectiveAddress{
-		Kind:     EAKindPreDecrement,
-		Base:     &Register{Kind: RegisterKindAddress, Number: srcReg},
-		Register: srcReg,
-	}), effectiveAddressOperand(dstText, EffectiveAddress{
-		Kind:     EAKindPreDecrement,
-		Base:     &Register{Kind: RegisterKindAddress, Number: dstReg},
-		Register: dstReg,
-	}))
+	setInstruction(data, inst, 2, mn, fmt.Sprintf("%s, %s", srcText, dstText),
+		addrIndirectOperand(EAKindPreDecrement, srcReg, srcText),
+		addrIndirectOperand(EAKindPreDecrement, dstReg, dstText))
 	return nil
 }

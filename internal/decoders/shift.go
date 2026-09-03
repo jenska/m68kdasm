@@ -27,42 +27,40 @@ func getDirectionStr(direction uint16) string {
 }
 
 func decodeShiftRotate(data []byte, opcode uint16, inst *Instruction) error {
-	direction := (opcode >> 8) & 0x1
-	size := (opcode >> 6) & 0x3
-	reg := uint8(opcode & 0x7)
-	sizeStr := []string{"B", "W", "L", "?"}[size]
+	dirStr := getDirectionStr((opcode >> 8) & 0x1)
 	rotType := (opcode >> 9) & 0x7
-	countIsReg := (opcode >> 5) & 0x1
-	dirStr := getDirectionStr(direction)
 
 	if rotType <= 3 {
-		// Register shift: extract shift count
-		mnemonicBase := getMnemonicBase(uint16(rotType))
+		// Register form: shift a data register by an immediate or register count.
+		reg := uint8(opcode & 0x7)
+		mnemonic := fmt.Sprintf("%s%s.%s", getMnemonicBase(rotType), dirStr, getSizeString((opcode>>6)&0x3))
+
 		var countStr string
-		if countIsReg == 0 {
+		var countMeta Operand
+		if (opcode>>5)&0x1 == 0 {
 			count := (opcode >> 9) & 0x7
 			if count == 0 {
 				count = 8
 			}
 			countStr = fmt.Sprintf("#%d", count)
-			setInstruction(data, inst, 2, fmt.Sprintf("%s%s.%s", mnemonicBase, dirStr, sizeStr), fmt.Sprintf("%s, D%d", countStr, reg), immediateOperand(countStr, uint32(count), 1), registerOperand(RegisterKindData, reg))
+			countMeta = immediateOperand(countStr, uint32(count), 1)
 		} else {
-			countReg := (opcode >> 9) & 0x7
+			countReg := uint8((opcode >> 9) & 0x7)
 			countStr = fmt.Sprintf("D%d", countReg)
-			setInstruction(data, inst, 2, fmt.Sprintf("%s%s.%s", mnemonicBase, dirStr, sizeStr), fmt.Sprintf("%s, D%d", countStr, reg), registerOperand(RegisterKindData, uint8(countReg)), registerOperand(RegisterKindData, reg))
+			countMeta = registerOperand(RegisterKindData, countReg)
 		}
-	} else {
-		// Memory shift: extract addressing mode
-		memMode := uint8((opcode >> 3) & 0x7)
-		memReg := uint8(opcode & 0x7)
-		memShiftType := (opcode >> 6) & 0x3
-		mnemonicBase := getMnemonicBase(memShiftType)
-		mnemonic := fmt.Sprintf("%s%s.W", mnemonicBase, dirStr)
-		operand, extraWords, meta, err := decodeAddressingMode(data[2:], memMode, memReg, 2)
-		if err != nil {
-			return err
-		}
-		setInstruction(data, inst, 2+extraWords*2, mnemonic, operand, meta)
+		setInstruction(data, inst, 2, mnemonic, fmt.Sprintf("%s, D%d", countStr, reg), countMeta, registerOperand(RegisterKindData, reg))
+		return nil
 	}
+
+	// Memory form: shift a memory word by one.
+	memMode := uint8((opcode >> 3) & 0x7)
+	memReg := uint8(opcode & 0x7)
+	mnemonic := fmt.Sprintf("%s%s.W", getMnemonicBase((opcode>>6)&0x3), dirStr)
+	operand, extraWords, meta, err := decodeAddressingMode(data[2:], memMode, memReg, 2)
+	if err != nil {
+		return err
+	}
+	setInstruction(data, inst, 2+extraWords*2, mnemonic, operand, meta)
 	return nil
 }

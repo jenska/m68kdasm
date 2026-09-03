@@ -7,6 +7,15 @@ import (
 
 var sizeNames = [...]string{"B", "W", "L", "?"}
 
+// DecodeUnknown builds the "DC.W" pseudo-instruction used when no decoder
+// matches the opcode.
+func DecodeUnknown(data []byte, address uint32, opcode uint16) *Instruction {
+	text := fmt.Sprintf("$%04X", opcode)
+	inst := &Instruction{Address: address, Opcode: opcode}
+	setInstruction(data, inst, 2, "DC.W", text, immediateOperand(text, uint32(opcode), 2))
+	return inst
+}
+
 // decodeNOP - No Operation (exact opcode: 0x4E71)
 func decodeNOP(data []byte, opcode uint16, inst *Instruction) error {
 	setInstruction(data, inst, 2, "NOP", "")
@@ -19,23 +28,10 @@ func decodeRTS(data []byte, opcode uint16, inst *Instruction) error {
 	return nil
 }
 
-// getSizeString converts 68000 size field (bits 6-7) to string
+// getSizeString converts a 68000 size field (bits 6-7) to string.
 // Maps: 0=B (byte), 1=W (word), 2=L (long), 3=? (undefined)
 func getSizeString(size uint16) string {
-	if int(size) < len(sizeNames) {
-		return sizeNames[size]
-	}
-	return "?"
-}
-
-// buildDirectedOperands creates reversed operands based on direction bit
-// direction == 0: src, dstReg format
-// direction != 0: dstReg, src format
-func buildDirectedOperands(direction uint16, src string, dstReg uint8) string {
-	if direction == 0 {
-		return fmt.Sprintf("%s, D%d", src, dstReg)
-	}
-	return fmt.Sprintf("D%d, %s", dstReg, src)
+	return sizeNames[size&0x3]
 }
 
 // setInstructionSize sets the instruction's Size and Bytes fields
@@ -52,6 +48,18 @@ func setInstruction(data []byte, inst *Instruction, size int, mnemonic, operands
 	inst.Operands = operands
 	setInstructionSize(data, inst, size)
 	populateMetadata(inst, mnemonic, structuredOperands)
+}
+
+// decodeUnaryEA decodes a single effective-address operand (JSR, JMP, PEA …).
+func decodeUnaryEA(mnemonic string, data []byte, opcode uint16, inst *Instruction) error {
+	mode := uint8((opcode >> 3) & 0x7)
+	reg := uint8(opcode & 0x7)
+	operand, offset, meta, err := decodeEA(data, inst.Address, 2, mode, reg)
+	if err != nil {
+		return err
+	}
+	setInstruction(data, inst, offset, mnemonic, operand, meta)
+	return nil
 }
 
 func decodeEA(data []byte, address uint32, offset int, mode, reg uint8) (string, int, Operand, error) {
@@ -85,11 +93,33 @@ func decodeDirectedBinaryOp(mnemonic string, data []byte, opcode uint16, inst *I
 	}
 
 	dstMeta := registerOperand(RegisterKindData, dstReg)
-	if direction == 0 {
-		setInstruction(data, inst, offset, mnemonic+"."+sizeStr, buildDirectedOperands(direction, srcOperand, dstReg), srcMeta, dstMeta)
-		return nil
+	dstText := fmt.Sprintf("D%d", dstReg)
+	text, first, second := srcOperand+", "+dstText, srcMeta, dstMeta
+	if direction != 0 {
+		text, first, second = dstText+", "+srcOperand, dstMeta, srcMeta
 	}
-	setInstruction(data, inst, offset, mnemonic+"."+sizeStr, buildDirectedOperands(direction, srcOperand, dstReg), dstMeta, srcMeta)
+	setInstruction(data, inst, offset, mnemonic+"."+sizeStr, text, first, second)
+	return nil
+}
+
+// decodeAddressRegisterOp decodes the "<mnemonic>A" form where the destination
+// is an address register and the size comes from the op-mode field
+// (op-mode 3 = word, op-mode 7 = long).
+func decodeAddressRegisterOp(mnemonic string, data []byte, opcode uint16, inst *Instruction) error {
+	dstReg := uint8((opcode >> 9) & 0x7)
+	srcMode := uint8((opcode >> 3) & 0x7)
+	srcReg := uint8(opcode & 0x7)
+
+	sizeStr, sizeBytes := "W", 2
+	if (opcode>>6)&0x7 == 7 {
+		sizeStr, sizeBytes = "L", 4
+	}
+
+	srcOperand, offset, srcMeta, err := decodeEAWithSize(data, inst.Address, 2, srcMode, srcReg, sizeBytes)
+	if err != nil {
+		return err
+	}
+	setInstruction(data, inst, offset, mnemonic+"A."+sizeStr, fmt.Sprintf("%s, A%d", srcOperand, dstReg), srcMeta, registerOperand(RegisterKindAddress, dstReg))
 	return nil
 }
 
@@ -190,6 +220,16 @@ func immediateOperand(text string, value uint32, size int) Operand {
 		Kind:      OperandKindImmediate,
 		Immediate: &imm,
 	}
+}
+
+// addrIndirectOperand builds an address-register indirect operand (optionally
+// with pre-decrement or post-increment) as used by ABCD/SBCD and CMPM.
+func addrIndirectOperand(kind EffectiveAddressKind, reg uint8, text string) Operand {
+	return effectiveAddressOperand(text, EffectiveAddress{
+		Kind:     kind,
+		Base:     &Register{Kind: RegisterKindAddress, Number: reg},
+		Register: reg,
+	})
 }
 
 func effectiveAddressOperand(text string, ea EffectiveAddress) Operand {

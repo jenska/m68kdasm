@@ -5,17 +5,16 @@ import "strings"
 // common masks and values used by the decoder jump table
 const (
 	// masks
-	maskFFFF  = 0xFFFF
-	maskFFF0  = 0xFFF0
-	maskFFF8  = 0xFFF8 // SWAP instruction mask
-	maskF1F0  = 0xF1F0
-	maskF1C0  = 0xF1C0
-	maskF100  = 0xF100
-	maskF000  = 0xF000
-	maskFFC0  = 0xFFC0
-	maskFF00  = 0xFF00
-	maskFB80  = 0xFB80
-	maskBitOp = 0xFFC0 // alias for bit-op mask
+	maskFFFF = 0xFFFF
+	maskFFF0 = 0xFFF0
+	maskFFF8 = 0xFFF8 // SWAP instruction mask
+	maskF1F0 = 0xF1F0
+	maskF1C0 = 0xF1C0
+	maskF100 = 0xF100
+	maskF000 = 0xF000
+	maskFFC0 = 0xFFC0
+	maskFF00 = 0xFF00
+	maskFB80 = 0xFB80
 
 	// exact opcode values
 	valNOP   = 0x4E71
@@ -200,20 +199,20 @@ func masked(mask, value uint16, decoder OpcodeDecoder) OpcodePattern {
 // Each bucket keeps the original precedence for that 4K region of the opcode space.
 var opcodeBuckets = [16][]OpcodePattern{
 	0x0: {
-		masked(maskBitOp, valBTSTReg, decodeBTST), // BTST (register)
-		masked(maskBitOp, valBTSTImm, decodeBTST), // BTST (immediate)
-		masked(maskBitOp, valBCHGReg, decodeBCHG), // BCHG (register)
-		masked(maskBitOp, valBCHGImm, decodeBCHG), // BCHG (immediate)
-		masked(maskBitOp, valBCLRReg, decodeBCLR), // BCLR (register)
-		masked(maskBitOp, valBCLRImm, decodeBCLR), // BCLR (immediate)
-		masked(maskBitOp, valBSETReg, decodeBSET), // BSET (register)
-		masked(maskBitOp, valBSETImm, decodeBSET), // BSET (immediate)
-		masked(maskFF00, valADDI, decodeADDI),     // ADDI
-		masked(maskFF00, valSUBI, decodeSUBI),     // SUBI
-		masked(maskFF00, valANDI, decodeANDI),     // ANDI
-		masked(maskFF00, valORI, decodeORI),       // ORI
-		masked(maskFF00, valEORI, decodeEORI),     // EORI
-		masked(maskFF00, valCMPI, decodeCMPI),     // CMPI
+		masked(maskFFC0, valBTSTReg, decodeBTST), // BTST (register)
+		masked(maskFFC0, valBTSTImm, decodeBTST), // BTST (immediate)
+		masked(maskFFC0, valBCHGReg, decodeBCHG), // BCHG (register)
+		masked(maskFFC0, valBCHGImm, decodeBCHG), // BCHG (immediate)
+		masked(maskFFC0, valBCLRReg, decodeBCLR), // BCLR (register)
+		masked(maskFFC0, valBCLRImm, decodeBCLR), // BCLR (immediate)
+		masked(maskFFC0, valBSETReg, decodeBSET), // BSET (register)
+		masked(maskFFC0, valBSETImm, decodeBSET), // BSET (immediate)
+		masked(maskFF00, valADDI, decodeADDI),    // ADDI
+		masked(maskFF00, valSUBI, decodeSUBI),    // SUBI
+		masked(maskFF00, valANDI, decodeANDI),    // ANDI
+		masked(maskFF00, valORI, decodeORI),      // ORI
+		masked(maskFF00, valEORI, decodeEORI),    // EORI
+		masked(maskFF00, valCMPI, decodeCMPI),    // CMPI
 	},
 	0x1: {
 		masked(maskF000, valMOVE_B, decodeMOVE), // MOVE.B
