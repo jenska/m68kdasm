@@ -5,6 +5,22 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.2.0] - 2026-09-12
+
+### Added
+- **Multi-CPU-variant support.** `DecodeOptions.CPU` selects the target 68k family member — `M68000` (default, unchanged behavior), `M68010`, `CPU32`, `M68020`, `M68030`, `M68040`, `M68060`. Opcode and addressing-mode availability is tracked per CPU via an explicit bitset rather than an ordinal comparison, since the family isn't a strict newer-implies-older chain (CPU32 branches off 68010 with its own extensions; 68040 drops `CALLM`/`RTM` that 68020/68030 have).
+- **68010/CPU32**: `MOVEC`, `MOVES`, `RTD`, `BGND`.
+- **68020+**: full extension-word addressing (memory indirect, scaled/suppressed index, 0/16/32-bit base and outer displacements), the `BFxxx` bitfield family (`BFTST`/`BFCHG`/`BFCLR`/`BFSET`/`BFEXTU`/`BFEXTS`/`BFFFO`/`BFINS`), `CAS`, `CHK2`/`CMP2`, 32×32 `MULU.L`/`MULS.L`/`DIVU.L`/`DIVS.L`, `PACK`/`UNPK`, `CALLM`/`RTM`, `TRAPcc`, `LINK.L`, `EXTB.L`, `CHK.L`. 68030/68040/68060 inherit all of this automatically (68040/68060 correctly exclude `CALLM`/`RTM`).
+- **Completed 68000 baseline coverage**: `LINK`, `UNLK`, `EXT`, `CHK`, `EXG`, `RESET`, `RTE`, `RTR`, `ILLEGAL`, `NBCD`, `MOVEP`, `ADDQ`, `SUBQ`, `Scc`, `DBcc` were previously missing entirely. Every canonical 68000 mnemonic now has a decoder.
+
+### Fixed
+- **Silent mis-decodes**: `TAS`, `ADDX`, and `SUBX` opcodes previously fell through to `TST`, `ADD`, and `SUB` respectively (with a garbled operand for `ADDX`/`SUBX`), and `EXG` fell through to `AND`, due to opcode-space collisions the original dispatch table didn't account for.
+
+### Changed
+- Reorganized `internal/decoders/*.go`: split the overloaded `types.go` into `types.go` (data model), `cpu.go` (`CPU`/`cpuSet`), and `opcodetable.go` (the single opcode-dispatch table); folded several session-specific files back into the existing per-instruction-family files; deduplicated near-identical decoders behind small shared factories.
+
+Not implemented (see `docs/design-cpu-variants.md` for rationale): `CAS2`, CPU32's `TBLS`/`TBLU` family, 68040's `MOVE16`/`CINV`/`CPUSH`, and FPU/PMMU coprocessor instructions.
+
 ## [1.1.0] - 2026-09-03
 
 ### Changed
