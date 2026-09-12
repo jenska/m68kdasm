@@ -376,11 +376,11 @@ func TestDecodeSymbolizerFormatsResolvedAddresses(t *testing.T) {
 }
 
 func TestDecodeSymbolizerFormatsPCRelativeAddresses(t *testing.T) {
-	data := []byte{0x4E, 0xBA, 0x00, 0x0E} // JSR (16,PC) at 0x1000 resolves to 0x1012
+	data := []byte{0x4E, 0xBA, 0x00, 0x10} // JSR (16,PC) at 0x1000 resolves to 0
 
 	inst, err := DecodeWithOptions(data, 0x1000, DecodeOptions{
 		Symbolizer: SymbolizeFunc(func(address uint32) (string, bool) {
-			if address == 0x1012 {
+			if address == 0x1014 {
 				return "_pc_target", true
 			}
 			return "", false
@@ -397,7 +397,7 @@ func TestDecodeSymbolizerFormatsPCRelativeAddresses(t *testing.T) {
 		t.Fatalf("Rohoperand wurde unerwartet überschrieben: %+v", inst.Metadata.Operands[0])
 	}
 	resolved := inst.Metadata.Operands[0].EffectiveAddress.ResolvedAddress
-	if resolved == nil || *resolved != 0x1012 {
+	if resolved == nil || *resolved != 0x1014 {
 		t.Fatalf("PC-relatives Ziel wurde nicht korrekt aufgelöst: %+v", inst.Metadata.Operands[0].EffectiveAddress)
 	}
 }

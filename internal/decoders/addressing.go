@@ -9,7 +9,7 @@ import (
 // operandSize is the logical operand width in bytes so immediate operands consume
 // the right number of extension words.
 // Returns: (formatted string, extra words needed, structured operand, error)
-func decodeAddressingMode(data []byte, mode, reg uint8, operandSize int) (string, int, Operand, error) {
+func decodeAddressingMode(data []byte, mode, reg uint8, operandSize int, cpu CPU) (string, int, Operand, error) {
 	switch mode {
 	case 0: // Data Register Direct
 		text := fmt.Sprintf("D%d", reg)
@@ -85,9 +85,12 @@ func decodeAddressingMode(data []byte, mode, reg uint8, operandSize int) (string
 			Displacement: new(int32(displacement)),
 		}), nil
 
-	case 6: // Address Register Indirect with Index
+	case 6: // Address Register Indirect with Index (brief or, on 68020+, full)
 		if err := requireLength(data, 2, "index extension word"); err != nil {
 			return "", 0, Operand{}, err
+		}
+		if extWord := binary.BigEndian.Uint16(data[:2]); cpuHasFullExtWords(cpu) && extWord&0x0100 != 0 {
+			return decodeFullExtension(data, mode, reg, false)
 		}
 		indexWord := binary.BigEndian.Uint16(data[:2])
 		indexType, indexReg, indexSize, displacement := decodeIndexWord(indexWord)
@@ -101,6 +104,7 @@ func decodeAddressingMode(data []byte, mode, reg uint8, operandSize int) (string
 			Index: &IndexRegister{
 				Register: Register{Kind: parseIndexRegisterKind(indexType), Number: indexReg},
 				Size:     string(indexSize),
+				Scale:    1,
 			},
 		}), nil
 
@@ -144,7 +148,7 @@ func decodeAddressingMode(data []byte, mode, reg uint8, operandSize int) (string
 			// Render the canonical source-level displacement accepted by m68kasm.
 			// The encoded extension word is relative to the extension word base,
 			// while assembly syntax is relative to the opcode address (+2 bytes).
-			text := fmt.Sprintf("(%d,PC)", displacement+2)
+			text := fmt.Sprintf("(%d,PC)", displacement)
 			return text, 1, effectiveAddressOperand(text, EffectiveAddress{
 				Kind:         EAKindPCDisplacement,
 				Mode:         mode,
@@ -153,13 +157,16 @@ func decodeAddressingMode(data []byte, mode, reg uint8, operandSize int) (string
 				Displacement: new(int32(displacement)),
 			}), nil
 
-		case 3: // Program Counter with Index
+		case 3: // Program Counter with Index (brief or, on 68020+, full)
 			if err := requireLength(data, 2, "pc index extension word"); err != nil {
 				return "", 0, Operand{}, err
 			}
+			if extWord := binary.BigEndian.Uint16(data[:2]); cpuHasFullExtWords(cpu) && extWord&0x0100 != 0 {
+				return decodeFullExtension(data, mode, reg, true)
+			}
 			indexWord := binary.BigEndian.Uint16(data[:2])
 			indexType, indexReg, indexSize, displacement := decodeIndexWord(indexWord)
-			text := fmt.Sprintf("(%d,PC,%s%d.%c)", displacement+2, indexType, indexReg, indexSize)
+			text := fmt.Sprintf("(%d,PC,%s%d.%c)", displacement, indexType, indexReg, indexSize)
 			return text, 1, effectiveAddressOperand(text, EffectiveAddress{
 				Kind:         EAKindPCIndex,
 				Mode:         mode,
@@ -169,6 +176,7 @@ func decodeAddressingMode(data []byte, mode, reg uint8, operandSize int) (string
 				Index: &IndexRegister{
 					Register: Register{Kind: parseIndexRegisterKind(indexType), Number: indexReg},
 					Size:     string(indexSize),
+					Scale:    1,
 				},
 			}), nil
 

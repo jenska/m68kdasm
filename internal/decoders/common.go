@@ -16,16 +16,25 @@ func DecodeUnknown(data []byte, address uint32, opcode uint16) *Instruction {
 	return inst
 }
 
-// decodeNOP - No Operation (exact opcode: 0x4E71)
-func decodeNOP(data []byte, opcode uint16, inst *Instruction) error {
-	setInstruction(data, inst, 2, "NOP", "")
-	return nil
+// noOperand builds a decoder for a fixed 2-byte, no-operand instruction
+// (NOP, RTS, RESET, ...). Sharing one factory keeps these one-liners from
+// being duplicated across the opcode table.
+func noOperand(mnemonic string) OpcodeDecoder {
+	return func(data []byte, opcode uint16, inst *Instruction, cpu CPU) error {
+		setInstruction(data, inst, 2, mnemonic, "")
+		return nil
+	}
 }
 
-// decodeRTS - Return from Subroutine (exact opcode: 0x4E75)
-func decodeRTS(data []byte, opcode uint16, inst *Instruction) error {
-	setInstruction(data, inst, 2, "RTS", "")
-	return nil
+// singleRegisterOperand builds a decoder for a fixed-mnemonic, 2-byte
+// instruction whose only operand is a single register named by the
+// opcode's low 3 bits (SWAP, UNLK, EXTB.L, ...).
+func singleRegisterOperand(mnemonic string, kind RegisterKind) OpcodeDecoder {
+	return func(data []byte, opcode uint16, inst *Instruction, cpu CPU) error {
+		meta := registerOperand(kind, uint8(opcode&0x7))
+		setInstruction(data, inst, 2, mnemonic, meta.Text, meta)
+		return nil
+	}
 }
 
 // getSizeString converts a 68000 size field (bits 6-7) to string.
@@ -51,10 +60,10 @@ func setInstruction(data []byte, inst *Instruction, size int, mnemonic, operands
 }
 
 // decodeUnaryEA decodes a single effective-address operand (JSR, JMP, PEA …).
-func decodeUnaryEA(mnemonic string, data []byte, opcode uint16, inst *Instruction) error {
+func decodeUnaryEA(mnemonic string, data []byte, opcode uint16, inst *Instruction, cpu CPU) error {
 	mode := uint8((opcode >> 3) & 0x7)
 	reg := uint8(opcode & 0x7)
-	operand, offset, meta, err := decodeEA(data, inst.Address, 2, mode, reg)
+	operand, offset, meta, err := decodeEA(data, inst.Address, 2, mode, reg, cpu)
 	if err != nil {
 		return err
 	}
@@ -62,12 +71,12 @@ func decodeUnaryEA(mnemonic string, data []byte, opcode uint16, inst *Instructio
 	return nil
 }
 
-func decodeEA(data []byte, address uint32, offset int, mode, reg uint8) (string, int, Operand, error) {
-	return decodeEAWithSize(data, address, offset, mode, reg, 2)
+func decodeEA(data []byte, address uint32, offset int, mode, reg uint8, cpu CPU) (string, int, Operand, error) {
+	return decodeEAWithSize(data, address, offset, mode, reg, 2, cpu)
 }
 
-func decodeEAWithSize(data []byte, address uint32, offset int, mode, reg uint8, operandSize int) (string, int, Operand, error) {
-	operand, extraWords, structured, err := decodeAddressingMode(data[offset:], mode, reg, operandSize)
+func decodeEAWithSize(data []byte, address uint32, offset int, mode, reg uint8, operandSize int, cpu CPU) (string, int, Operand, error) {
+	operand, extraWords, structured, err := decodeAddressingMode(data[offset:], mode, reg, operandSize, cpu)
 	if err != nil {
 		return "", offset, Operand{}, err
 	}
@@ -75,7 +84,7 @@ func decodeEAWithSize(data []byte, address uint32, offset int, mode, reg uint8, 
 	return operand, nextOffset, resolveEffectiveAddress(address, nextOffset, structured), nil
 }
 
-func decodeDirectedBinaryOp(mnemonic string, data []byte, opcode uint16, inst *Instruction) error {
+func decodeDirectedBinaryOp(mnemonic string, data []byte, opcode uint16, inst *Instruction, cpu CPU) error {
 	direction := (opcode >> 8) & 0x1
 	sizeBits := (opcode >> 6) & 0x3
 	sizeStr := getSizeString(sizeBits)
@@ -87,7 +96,7 @@ func decodeDirectedBinaryOp(mnemonic string, data []byte, opcode uint16, inst *I
 	srcMode := uint8((opcode >> 3) & 0x7)
 	srcReg := uint8(opcode & 0x7)
 
-	srcOperand, offset, srcMeta, err := decodeEAWithSize(data, inst.Address, 2, srcMode, srcReg, operandSize)
+	srcOperand, offset, srcMeta, err := decodeEAWithSize(data, inst.Address, 2, srcMode, srcReg, operandSize, cpu)
 	if err != nil {
 		return err
 	}
@@ -105,7 +114,7 @@ func decodeDirectedBinaryOp(mnemonic string, data []byte, opcode uint16, inst *I
 // decodeAddressRegisterOp decodes the "<mnemonic>A" form where the destination
 // is an address register and the size comes from the op-mode field
 // (op-mode 3 = word, op-mode 7 = long).
-func decodeAddressRegisterOp(mnemonic string, data []byte, opcode uint16, inst *Instruction) error {
+func decodeAddressRegisterOp(mnemonic string, data []byte, opcode uint16, inst *Instruction, cpu CPU) error {
 	dstReg := uint8((opcode >> 9) & 0x7)
 	srcMode := uint8((opcode >> 3) & 0x7)
 	srcReg := uint8(opcode & 0x7)
@@ -115,7 +124,7 @@ func decodeAddressRegisterOp(mnemonic string, data []byte, opcode uint16, inst *
 		sizeStr, sizeBytes = "L", 4
 	}
 
-	srcOperand, offset, srcMeta, err := decodeEAWithSize(data, inst.Address, 2, srcMode, srcReg, sizeBytes)
+	srcOperand, offset, srcMeta, err := decodeEAWithSize(data, inst.Address, 2, srcMode, srcReg, sizeBytes, cpu)
 	if err != nil {
 		return err
 	}
@@ -210,15 +219,10 @@ func registerOperand(kind RegisterKind, number uint8) Operand {
 }
 
 func immediateOperand(text string, value uint32, size int) Operand {
-	imm := ImmediateValue{
-		Value:  value,
-		Signed: signedImmediateValue(value, size),
-		Size:   uint8(size),
-	}
 	return Operand{
 		Text:      text,
 		Kind:      OperandKindImmediate,
-		Immediate: &imm,
+		Immediate: immediatePtr(value, size),
 	}
 }
 

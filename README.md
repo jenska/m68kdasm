@@ -1,14 +1,15 @@
 # m68kdasm
 
-A Go disassembler for the Motorola 68000 CPU.
+A Go disassembler for the Motorola 68000 family (68000, 68010, CPU32, 68020, 68030, 68040, 68060).
 
 `m68kdasm` translates big-endian m68k machine code into readable assembly and structured decode metadata. It is intended for emulators, debuggers, trace tools, and binary-analysis workflows that need more than just formatted text.
 
 ## Features
 
-- Fast opcode dispatch using a hierarchical jump table.
-- Broad 68000 instruction coverage including branches, arithmetic, logic, shifts, BCD, and control flow.
-- Full 68000 addressing-mode decoding, including PC-relative and immediate forms.
+- Fast opcode dispatch using a hierarchical jump table, gated per target CPU.
+- Full 68000 instruction coverage (every mnemonic in the standard 68000 opcode map), plus branches, arithmetic, logic, shifts, and BCD.
+- Full 68000 addressing-mode decoding, including PC-relative and immediate forms, plus the 68020+ full extension word (memory indirect, scaled/suppressed index, 0/16/32-bit base and outer displacements).
+- CPU-variant opcode support: `MOVEC`/`MOVES`/`RTD` (68010+), `BGND` (CPU32), and 68020+ additions — `BFxxx` bitfield ops, `CAS`, `CHK2`/`CMP2`, 32×32 `MULU.L`/`MULS.L`/`DIVU.L`/`DIVS.L`, `PACK`/`UNPK`, `CALLM`/`RTM` (68020/68030 only), `TRAPcc`, `LINK.L`, `EXTB.L`, `CHK.L`.
 - Exact decoded instruction length via `Instruction.Size`.
 - Decoded extension words via `Instruction.ExtensionWords`.
 - Structured metadata for mnemonic, operands, branch targets, immediates, and effective-address kinds.
@@ -17,6 +18,20 @@ A Go disassembler for the Motorola 68000 CPU.
 - Precise partial-decode errors that report missing-byte counts.
 - Optional symbol formatting hooks for resolved addresses.
 - ELF helpers for disassembling 68000 ELF binaries.
+
+## Selecting a target CPU
+
+`DecodeOptions.CPU` selects which 68k family member to decode for. The zero value, `M68000`, decodes plain 68000 opcodes only and is unaffected by any of the CPU-variant work described here.
+
+```go
+inst, err := m68kdasm.DecodeWithOptions(data, address, m68kdasm.DecodeOptions{
+    CPU: m68kdasm.M68020,
+})
+```
+
+Available values: `M68000`, `M68010`, `CPU32`, `M68020`, `M68030`, `M68040`, `M68060`. Opcode availability isn't a strict "newer implies older" chain — CPU32 is a 68010-derived core with its own additions and a reduced 68020-style addressing mode, and `CALLM`/`RTM` are valid on 68020/68030 but were removed starting with the 68040 — so each opcode is tagged with the exact set of CPUs it decodes on rather than a minimum version.
+
+Not yet implemented: FPU (68881/68882/68040/68060 built-in) and PMMU (68851/68030) coprocessor instructions, `CAS2`, and CPU32's `TBLS`/`TBLU` table-lookup family, and the 68040-specific `MOVE16`/`CINV`/`CPUSH`. See [docs/design-cpu-variants.md](docs/design-cpu-variants.md) for the full design and rationale.
 
 ## Install
 

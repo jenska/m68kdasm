@@ -120,7 +120,7 @@ func decodeInstruction(initial []byte, address uint32, reader addressReader, opt
 	}
 
 	opcode := binary.BigEndian.Uint16(data[:2])
-	decoder := decoders.FindDecoder(opcode)
+	decoder := decoders.FindDecoder(opcode, opts.CPU)
 	if decoder == nil {
 		return finalizeInstruction(decoders.DecodeUnknown(data, address, opcode), opts), nil
 	}
@@ -133,7 +133,7 @@ func decodeInstruction(initial []byte, address uint32, reader addressReader, opt
 			Bytes:   data[:2],
 		}
 
-		err := decoder(data, opcode, decoderInst)
+		err := decoder(data, opcode, decoderInst, opts.CPU)
 		if err == nil {
 			return finalizeInstruction(decoderInst, opts), nil
 		}
