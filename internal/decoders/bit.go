@@ -5,23 +5,23 @@ import (
 	"fmt"
 )
 
-func decodeBTST(data []byte, opcode uint16, inst *Instruction) error {
-	return decodeBitset("BTST", data, opcode, inst)
+func decodeBTST(data []byte, opcode uint16, inst *Instruction, cpu CPU) error {
+	return decodeBitset("BTST", data, opcode, inst, cpu)
 }
 
-func decodeBCHG(data []byte, opcode uint16, inst *Instruction) error {
-	return decodeBitset("BCHG", data, opcode, inst)
+func decodeBCHG(data []byte, opcode uint16, inst *Instruction, cpu CPU) error {
+	return decodeBitset("BCHG", data, opcode, inst, cpu)
 }
 
-func decodeBCLR(data []byte, opcode uint16, inst *Instruction) error {
-	return decodeBitset("BCLR", data, opcode, inst)
+func decodeBCLR(data []byte, opcode uint16, inst *Instruction, cpu CPU) error {
+	return decodeBitset("BCLR", data, opcode, inst, cpu)
 }
 
-func decodeBSET(data []byte, opcode uint16, inst *Instruction) error {
-	return decodeBitset("BSET", data, opcode, inst)
+func decodeBSET(data []byte, opcode uint16, inst *Instruction, cpu CPU) error {
+	return decodeBitset("BSET", data, opcode, inst, cpu)
 }
 
-func decodeBitset(mn string, data []byte, opcode uint16, inst *Instruction) error {
+func decodeBitset(mn string, data []byte, opcode uint16, inst *Instruction, cpu CPU) error {
 	mode := uint8((opcode >> 3) & 0x7)
 	reg := uint8(opcode & 0x7)
 	offset := 2
@@ -40,7 +40,7 @@ func decodeBitset(mn string, data []byte, opcode uint16, inst *Instruction) erro
 		offset += 2
 		bitOperand = immediateOperand(bitNumStr, uint32(bitNum&0xFF), 1)
 	}
-	operand, offset, eaMeta, err := decodeEA(data, inst.Address, offset, mode, reg)
+	operand, offset, eaMeta, err := decodeEA(data, inst.Address, offset, mode, reg, cpu)
 	if err != nil {
 		return err
 	}

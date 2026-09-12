@@ -8,6 +8,9 @@ import (
 
 type DecodeOptions struct {
 	Symbolizer Symbolizer
+	// CPU selects the target 68k family member. The zero value, M68000,
+	// decodes plain 68000 opcodes only, preserving prior behavior.
+	CPU CPU
 }
 
 type Symbolizer interface {
@@ -34,6 +37,17 @@ type (
 	EffectiveAddress     = decoders.EffectiveAddress
 	EffectiveAddressKind = decoders.EffectiveAddressKind
 	IndexRegister        = decoders.IndexRegister
+	CPU                  = decoders.CPU
+)
+
+const (
+	M68000 = decoders.M68000
+	M68010 = decoders.M68010
+	CPU32  = decoders.CPU32
+	M68020 = decoders.M68020
+	M68030 = decoders.M68030
+	M68040 = decoders.M68040
+	M68060 = decoders.M68060
 )
 
 const (

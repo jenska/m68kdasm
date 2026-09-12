@@ -26,7 +26,7 @@ func getDirectionStr(direction uint16) string {
 	return "L"
 }
 
-func decodeShiftRotate(data []byte, opcode uint16, inst *Instruction) error {
+func decodeShiftRotate(data []byte, opcode uint16, inst *Instruction, cpu CPU) error {
 	dirStr := getDirectionStr((opcode >> 8) & 0x1)
 	rotType := (opcode >> 9) & 0x7
 
@@ -57,7 +57,7 @@ func decodeShiftRotate(data []byte, opcode uint16, inst *Instruction) error {
 	memMode := uint8((opcode >> 3) & 0x7)
 	memReg := uint8(opcode & 0x7)
 	mnemonic := fmt.Sprintf("%s%s.W", getMnemonicBase((opcode>>6)&0x3), dirStr)
-	operand, extraWords, meta, err := decodeAddressingMode(data[2:], memMode, memReg, 2)
+	operand, extraWords, meta, err := decodeAddressingMode(data[2:], memMode, memReg, 2, cpu)
 	if err != nil {
 		return err
 	}
