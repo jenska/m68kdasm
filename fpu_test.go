@@ -175,6 +175,74 @@ func TestFPUMathExtRoundTrip(t *testing.T) {
 	}
 }
 
+// TestFPUMOVEMCtrlRoundTrip covers FMOVEM's other register-list form: the
+// FPCR/FPSR/FPIAR control registers (a 3-bit mask, genuinely distinct
+// subsystem from the FP0-FP7 data-register list already covered by
+// TestFPUGenericRoundTrip) — see decodeFMOVEM's fpMovemCtrlLoad/
+// fpMovemCtrlStore cases in internal/decoders/fpu.go.
+func TestFPUMOVEMCtrlRoundTrip(t *testing.T) {
+	testCases := []string{
+		"FMOVEM.L FPIAR, D0",
+		"FMOVEM.L FPIAR, A0",
+		"FMOVEM.L FPIAR, (A0)",
+		"FMOVEM.L FPSR/FPIAR, (A0)",
+		"FMOVEM.L FPCR/FPSR/FPIAR, (A0)", // exercises bit 12 (FPCR) colliding with a naive "top nibble" read
+		"FMOVEM.L (A0), FPIAR",
+		"FMOVEM.L (A0), FPSR/FPIAR",
+		"FMOVEM.L (A0), FPCR/FPSR/FPIAR",
+		"FMOVEM.L D0, FPIAR",
+	}
+	for _, source := range testCases {
+		t.Run(source, func(t *testing.T) {
+			data, err := m68kasm.AssembleStringWithOptions(source, fpuTarget)
+			if err != nil {
+				t.Fatalf("assembler error for %q: %v", source, err)
+			}
+			inst, err := DecodeWithOptions(data, 0, DecodeOptions{CPU: M68020, FPU: true})
+			if err != nil {
+				t.Fatalf("decode error for %q (bytes % X): %v", source, data, err)
+			}
+			if int(inst.Size) != len(data) {
+				t.Errorf("%q: decoded size %d, assembled %d bytes (% X)", source, inst.Size, len(data), data)
+			}
+			if got := inst.Assembly(); got != source {
+				t.Errorf("mismatch\n want: %q\n  got: %q\nbytes: % X", source, got, data)
+			}
+		})
+	}
+}
+
+// TestFPUSaveRestoreRoundTrip covers FSAVE/FRESTORE's instruction shell
+// (mnemonic + <ea>) — see decodeFSAVE/decodeFRESTORE in
+// internal/decoders/fpu.go. Frame contents are out of scope (see
+// docs/design-fpu-mmu.md's Non-goals).
+func TestFPUSaveRestoreRoundTrip(t *testing.T) {
+	testCases := []string{
+		"FSAVE (A0)",
+		"FSAVE -(A0)",
+		"FRESTORE (A0)",
+		"FRESTORE (A0)+",
+	}
+	for _, source := range testCases {
+		t.Run(source, func(t *testing.T) {
+			data, err := m68kasm.AssembleStringWithOptions(source, fpuTarget)
+			if err != nil {
+				t.Fatalf("assembler error for %q: %v", source, err)
+			}
+			inst, err := DecodeWithOptions(data, 0, DecodeOptions{CPU: M68020, FPU: true})
+			if err != nil {
+				t.Fatalf("decode error for %q (bytes % X): %v", source, data, err)
+			}
+			if int(inst.Size) != len(data) {
+				t.Errorf("%q: decoded size %d, assembled %d bytes (% X)", source, inst.Size, len(data), data)
+			}
+			if got := inst.Assembly(); got != source {
+				t.Errorf("mismatch\n want: %q\n  got: %q\nbytes: % X", source, got, data)
+			}
+		})
+	}
+}
+
 // TestFPUMOVECRRoundTrip covers FMOVECR (ROM constant load) — see
 // decodeFMOVECR in internal/decoders/fpu.go.
 func TestFPUMOVECRRoundTrip(t *testing.T) {

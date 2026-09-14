@@ -250,8 +250,8 @@ code is verified against the datasheet.
 5. ~~**FMOVEM PR**~~ — done: static/dynamic register list, to/from general memory or predecrement
    addressing (see [internal/decoders/fpu.go](../internal/decoders/fpu.go)'s `decodeFMOVEM`), verified
    against m68kasm's `cpu020_fpu_movem.go` including a byte-level cross-check against its own literal
-   test vectors before any decode logic was written. **Not done**: the separate `FPCR`/`FPSR`/`FPIAR`
-   control-register-list form (`cpu020_fpu_movem_ctrl.go` in m68kasm) — still open.
+   test vectors before any decode logic was written. The separate `FPCR`/`FPSR`/`FPIAR`
+   control-register-list form (`cpu020_fpu_movem_ctrl.go` in m68kasm) landed later, folded into step 8.
 6. ~~**FPU transcendental PR**~~ — done: `FSIN`/`FCOS`/`FTAN`/`FATAN`/`FASIN`/`FACOS`/`FATANH`/`FSINH`/
    `FCOSH`/`FTANH`/`FETOX`/`FETOXM1`/`FLOGN`/`FLOGNP1`/`FLOG10`/`FLOG2`/`FTWOTOX`/`FTENTOX` — all 18
    are the exact same monadic shape as `FABS`/`FNEG`/`FSQRT`, so this was purely opmode-table entries in
@@ -283,8 +283,20 @@ code is verified against the datasheet.
    16/32-bit-displacement branch — undetected because no prior test exercised those forms via the
    assembler. Fixed in the same session (`branch.go`'s new `branchTarget` helper), reused by
    `FBcc`/`FDBcc` so both families share one verified formula. See commit history for detail.
-8. **FSAVE/FRESTORE PR** (optional, low priority): decode the instruction shell (`<ea>`, format byte)
-   without interpreting frame contents, per Non-goals.
+8. ~~**FSAVE/FRESTORE PR**~~ — done: the instruction shell only (mnemonic + `<ea>`), no frame-content
+   interpretation, per Non-goals. Unlike every other instruction this doc covers, these are single-word
+   opcodes with no coprocessor command word2 at all — `fpuWord1Base | 0x0100`/`0x0140 | <ea>`. Also
+   folded in here (found to be a small, cleanly-scoped remainder of step 5, not worth its own step):
+   FMOVEM's separate `FPCR`/`FPSR`/`FPIAR` control-register-list form (a 3-bit mask at word2 bits 12-10,
+   a genuinely different subsystem from the `FP0`-`FP7` 8-bit mask). Implementing it required replacing
+   `decodeFMOVEM`'s dispatch — a naive "top nibble" read (bits 15-12), which had been correct for the
+   FPn-list forms since their mask fields never touch bit 12, breaks for the control-register form: its
+   3-bit mask sits at bits 12-10 and can set bit 12 itself (whenever `FPCR` is included), so e.g.
+   `FMOVEM FPCR/FPSR/FPIAR,(A0)` encodes word2 as `$BC00`, nothing like its own `$A000` base literal.
+   Replaced with a `word2 & 0xE000` ("class") dispatch, the only bit range genuinely stable across all
+   four FMOVEM word2 shapes — caught by `TestFPUMOVEMCtrlRoundTrip`'s all-three-registers case before
+   it shipped wrong, not after. See `decodeFMOVEM` in `internal/decoders/fpu.go` for the full
+   derivation.
 9. **68851/68030 PMMU PR**: `PLOAD`, `PFLUSH`/`PFLUSHA`, `PMOVE`, `PTEST`, `PVALID`, gated on a new `MMU`
    flag (add it to `DecodeOptions` in this step, not before — see step 2's note) and
    `CPU ∈ {68020, 68030}` (68851 is usable with either; 68030's built-in PMMU is a fixed subset — confirm

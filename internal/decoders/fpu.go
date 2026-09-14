@@ -6,25 +6,27 @@ import (
 	"fmt"
 	"math"
 	"strconv"
+	"strings"
 )
 
 // This file decodes: the FPU "general instruction" family (68881/68882, or
 // the 68040/68060's built-in FPU, which is opcode-compatible for this
 // subset) — FMOVE, FADD, FSUB, FMUL, FDIV, FCMP, FABS, FNEG, FSQRT, FTST,
-// FNOP, FMOVEM (FPn register-list save/restore), the full transcendental
-// function set (FSIN, FCOS, FLOGN, ...), the math-extensions bucket
-// (FGETEXP, FGETMAN, FSCALE, FMOD, FREM), FMOVECR (ROM constant load), and
-// FSINCOS (the one FPU instruction with two destination registers) — and
-// the FPU's own conditional branch/set/trap family, FBcc/FDBcc/FScc/
-// FTRAPcc (a distinct 32-condition space from the integer ISA's 16). It
-// covers steps 3-7 of docs/design-fpu-mmu.md's delivery sequence,
-// deliberately matching the scope of github.com/jenska/m68kasm's own
-// equivalent milestones (internal/asm/instructions/cpu020_fpu.go,
-// cpu020_fpu_movem.go, cpu020_fpu_cond.go, cpu020_fpu_trans.go,
-// cpu020_fpu_mathext.go, cpu020_fpu_sincos.go) — FSAVE/FRESTORE, FMOVEM's
-// FPCR/FPSR/FPIAR control-register-list form, and packed-BCD store
-// (k-factor) are follow-ups,
-// not implemented here.
+// FNOP, FMOVEM (both the FP0-FP7 register-list form and the FPCR/FPSR/
+// FPIAR control-register-list form), the full transcendental function set
+// (FSIN, FCOS, FLOGN, ...), the math-extensions bucket (FGETEXP, FGETMAN,
+// FSCALE, FMOD, FREM), FMOVECR (ROM constant load), and FSINCOS (the one
+// FPU instruction with two destination registers) — the FPU's own
+// conditional branch/set/trap family, FBcc/FDBcc/FScc/FTRAPcc (a distinct
+// 32-condition space from the integer ISA's 16) — and FSAVE/FRESTORE
+// (coprocessor state-frame save/restore; the instruction shell only, not
+// frame contents — see this file's own decodeFSAVE doc comment). It covers
+// steps 3-8 of docs/design-fpu-mmu.md's delivery sequence, deliberately
+// matching the scope of github.com/jenska/m68kasm's own equivalent
+// milestones (internal/asm/instructions/cpu020_fpu.go, cpu020_fpu_movem.go,
+// cpu020_fpu_movem_ctrl.go, cpu020_fpu_cond.go, cpu020_fpu_trans.go,
+// cpu020_fpu_mathext.go, cpu020_fpu_sincos.go) — only packed-BCD store
+// (k-factor) remains a follow-up, not implemented here.
 //
 // Every bit position below was read from m68kasm v1.5.0's verified encoder
 // (internal/asm/encode.go's applyField/fpFormatCode/fpRMBit), itself
@@ -467,33 +469,59 @@ func decodeFSINCOS(data []byte, opcode uint16, inst *Instruction, cpu CPU, word2
 	return nil
 }
 
-// FMOVEM's word2 top nibble (bits 15-12) selects direction: 0xD = load
-// (<ea>,list), 0xE = store to -(An) (list reversed for the predecrement
-// convention, matching integer MOVEM), 0xF = store to general memory
-// (unreversed). Bit 11 (fpMovemDynBit) selects a dynamic Dn-specified list
-// instead of a static FPn mask. Cross-checked against m68kasm's
-// FFPMovemStoreWord2/FFPMovemDynStoreWord2/word2 literals in
-// cpu020_fpu_movem.go/encode.go.
+// FMOVEM has two independent register-list forms sharing one mnemonic:
+// FPn (FP0-FP7, an 8-bit mask) and the FPCR/FPSR/FPIAR control registers (a
+// 3-bit mask). Word2's top 3 bits (mask 0xE000) select which of four
+// classes applies — this is the only reliable dispatch key: a naive "top
+// nibble" (bits 15-12) works for the FPn forms (their register/mask fields
+// never touch bit 12) but NOT for the control-register forms, where the
+// 3-bit mask sits at bits 12-10 and can legitimately set bit 12 itself
+// (whenever FPCR, mask bit 2, is included) — e.g. "FMOVEM FPCR/FPSR/FPIAR,
+// (A0)" encodes word2 as $BC00, whose naive top nibble ($B) looks nothing
+// like the $A000 base literal it actually is. Cross-checked against
+// m68kasm's word2 literals in cpu020_fpu_movem.go/cpu020_fpu_movem_ctrl.go.
 const (
-	fpMovemLoadTop     = 0xD
-	fpMovemStorePreTop = 0xE
-	fpMovemStoreGenTop = 0xF
-	fpMovemDynBit      = 0x0800
+	fpMovemClassMask  = 0xE000
+	fpMovemCtrlLoad   = 0x8000 // <ea>,FPCR/FPSR/FPIAR-list
+	fpMovemCtrlStore  = 0xA000 // FPCR/FPSR/FPIAR-list,<ea>
+	fpMovemFPnLoad    = 0xC000 // <ea>,FPn-list (word2 top nibble 0xD)
+	fpMovemFPnStore   = 0xE000 // FPn-list,<ea> (word2 top nibble 0xE or 0xF)
+	fpMovemPredecBit  = 0x1000 // FPn-store only: 0 = -(An) (reversed list), 1 = general memory
+	fpMovemDynBit     = 0x0800 // FPn forms only: dynamic Dn-specified list instead of a static mask
+	fpMovemCtrlSelect = 0x1C00 // control-register forms: 3-bit mask at bits 12-10
 )
 
 func decodeFMOVEM(data []byte, opcode uint16, inst *Instruction, cpu CPU, word2 uint16) error {
 	mode := uint8((opcode >> 3) & 0x7)
 	reg := uint8(opcode & 0x7)
-	dynamic := word2&fpMovemDynBit != 0
-	top := word2 >> 12
 
-	switch top {
-	case fpMovemLoadTop:
+	switch word2 & fpMovemClassMask {
+	case fpMovemCtrlLoad:
 		eaText, offset, eaMeta, err := decodeEA(data, inst.Address, 4, mode, reg, cpu)
 		if err != nil {
 			return err
 		}
-		if dynamic {
+		listText, names := formatFPCtrlRegList(uint8((word2 & fpMovemCtrlSelect) >> 10))
+		listMeta := registerListOperand(listText, names)
+		setInstruction(data, inst, offset, "FMOVEM.L", eaText+", "+listText, eaMeta, listMeta)
+		return nil
+
+	case fpMovemCtrlStore:
+		eaText, offset, eaMeta, err := decodeEA(data, inst.Address, 4, mode, reg, cpu)
+		if err != nil {
+			return err
+		}
+		listText, names := formatFPCtrlRegList(uint8((word2 & fpMovemCtrlSelect) >> 10))
+		listMeta := registerListOperand(listText, names)
+		setInstruction(data, inst, offset, "FMOVEM.L", listText+", "+eaText, listMeta, eaMeta)
+		return nil
+
+	case fpMovemFPnLoad:
+		eaText, offset, eaMeta, err := decodeEA(data, inst.Address, 4, mode, reg, cpu)
+		if err != nil {
+			return err
+		}
+		if word2&fpMovemDynBit != 0 {
 			dMeta := registerOperand(RegisterKindData, uint8((word2>>4)&0x7))
 			setInstruction(data, inst, offset, "FMOVEM.X", eaText+", "+dMeta.Text, eaMeta, dMeta)
 			return nil
@@ -503,17 +531,18 @@ func decodeFMOVEM(data []byte, opcode uint16, inst *Instruction, cpu CPU, word2 
 		setInstruction(data, inst, offset, "FMOVEM.X", eaText+", "+listText, eaMeta, listMeta)
 		return nil
 
-	case fpMovemStorePreTop, fpMovemStoreGenTop:
+	case fpMovemFPnStore:
 		eaText, offset, eaMeta, err := decodeEA(data, inst.Address, 4, mode, reg, cpu)
 		if err != nil {
 			return err
 		}
-		if dynamic {
+		predecrement := word2&fpMovemPredecBit == 0
+		if word2&fpMovemDynBit != 0 {
 			dMeta := registerOperand(RegisterKindData, uint8((word2>>4)&0x7))
 			setInstruction(data, inst, offset, "FMOVEM.X", dMeta.Text+", "+eaText, dMeta, eaMeta)
 			return nil
 		}
-		listText, regs := formatFPRegisterList(word2&0xFF, top == fpMovemStorePreTop)
+		listText, regs := formatFPRegisterList(word2&0xFF, predecrement)
 		listMeta := registerListOperand(listText, regs)
 		setInstruction(data, inst, offset, "FMOVEM.X", listText+", "+eaText, listMeta, eaMeta)
 		return nil
@@ -521,6 +550,27 @@ func decodeFMOVEM(data []byte, opcode uint16, inst *Instruction, cpu CPU, word2 
 	default:
 		return fmt.Errorf("unrecognized FPU coprocessor command word: $%04X", word2)
 	}
+}
+
+// formatFPCtrlRegList renders FMOVEM's 3-bit FPCR/FPSR/FPIAR selector mask
+// (bit 0 = FPIAR, bit 1 = FPSR, bit 2 = FPCR — GAS's own bit assignment,
+// see m68kasm's fpCtrlRegisterBit). Printed high-bit-first (FPCR/FPSR/
+// FPIAR when all three are set), matching the order m68kasm's own test
+// source consistently writes them in (cpu020_fpu_movem_ctrl_test.go),
+// there being no numeric register ordering to fall back on the way
+// formatRegisterRange has for D0-D7/FP0-FP7.
+func formatFPCtrlRegList(mask uint8) (string, []string) {
+	var names []string
+	if mask&0x4 != 0 {
+		names = append(names, "FPCR")
+	}
+	if mask&0x2 != 0 {
+		names = append(names, "FPSR")
+	}
+	if mask&0x1 != 0 {
+		names = append(names, "FPIAR")
+	}
+	return strings.Join(names, "/"), names
 }
 
 // formatFPRegisterList mirrors formatRegisterList (special.go) for FMOVEM's
@@ -638,4 +688,42 @@ func decodeExtendedReal(raw []byte) float64 {
 		value = -value
 	}
 	return value
+}
+
+// decodeFSAVE and decodeFRESTORE decode the FPU coprocessor state-frame
+// save/restore instructions. Unlike every other instruction in this file,
+// these are single-word opcodes (word1 = fpuWord1Base | 0x0100 for FSAVE,
+// | 0x0140 for FRESTORE, with the <ea> mode/reg in bits 5-0 as usual) —
+// there is no coprocessor command word2, since the operand is purely a
+// destination/source address, not a register or format selector.
+//
+// The frame body FSAVE writes (or FRESTORE reads) at runtime is a
+// hardware/implementation-defined state dump with no disassembly-time
+// meaning — like MOVEM's own <ea> operand not needing to know what values
+// live in memory, decoding the instruction shell (mnemonic + <ea>) is the
+// whole job; interpreting frame contents is out of scope (see the
+// Non-goals section of docs/design-fpu-mmu.md).
+//
+// Cross-checked against m68kasm's newFSaveRestoreDef (cpu020_fpu_cond.go),
+// including that file's own note that this codebase's word1 literals were
+// originally shipped missing fpuWord1Base's coprocessor-ID bit (0xF100/
+// 0xF140 instead of 0xF300/0xF340) — a bug class already found and fixed
+// there once; this decoder is written against the corrected values.
+func decodeFSAVE(data []byte, opcode uint16, inst *Instruction, cpu CPU) error {
+	return decodeFSaveRestore(data, opcode, inst, cpu, "FSAVE")
+}
+
+func decodeFRESTORE(data []byte, opcode uint16, inst *Instruction, cpu CPU) error {
+	return decodeFSaveRestore(data, opcode, inst, cpu, "FRESTORE")
+}
+
+func decodeFSaveRestore(data []byte, opcode uint16, inst *Instruction, cpu CPU, mnemonic string) error {
+	mode := uint8((opcode >> 3) & 0x7)
+	reg := uint8(opcode & 0x7)
+	eaText, offset, eaMeta, err := decodeEA(data, inst.Address, 2, mode, reg, cpu)
+	if err != nil {
+		return err
+	}
+	setInstruction(data, inst, offset, mnemonic, eaText, eaMeta)
+	return nil
 }

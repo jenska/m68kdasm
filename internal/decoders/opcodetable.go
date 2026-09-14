@@ -179,6 +179,12 @@ const (
 	valFTRAPccL   = 0xF27B // occupies FScc's mode-7/reg-3 EA slot
 	valFTRAPccNil = 0xF27C // occupies FScc's mode-7/reg-4 EA slot
 
+	// FSAVE/FRESTORE: single-word coprocessor state-frame save/restore,
+	// no command word2 (see fpu.go's decodeFSaveRestore). fpuWord1Base
+	// (0xF200) | 0x0100/0x0140 | <ea> in bits 5-0.
+	valFSAVE    = 0xF300
+	valFRESTORE = 0xF340
+
 	valBFTST  = 0xE0C0
 	valBFEXTU = 0xE1C0
 	valBFCHG  = 0xE2C0
@@ -395,6 +401,8 @@ var opcodeBuckets = [16][]OpcodePattern{
 		fpuMasked(maskFFE0, valFBccW, decodeFBcc),
 		fpuMasked(maskFFE0, valFBccL, decodeFBcc),
 		fpuMasked(maskFFC0, valFPGeneric, decodeFPGeneric),
+		fpuMasked(maskFFC0, valFSAVE, decodeFSAVE),
+		fpuMasked(maskFFC0, valFRESTORE, decodeFRESTORE),
 	},
 }
 
