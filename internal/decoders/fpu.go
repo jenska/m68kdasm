@@ -11,17 +11,19 @@ import (
 // This file decodes: the FPU "general instruction" family (68881/68882, or
 // the 68040/68060's built-in FPU, which is opcode-compatible for this
 // subset) — FMOVE, FADD, FSUB, FMUL, FDIV, FCMP, FABS, FNEG, FSQRT, FTST,
-// FNOP, FMOVEM (FPn register-list save/restore), and the full transcendental
-// function set (FSIN, FCOS, FLOGN, ...) — and the FPU's own conditional
-// branch/set/trap family, FBcc/FDBcc/FScc/FTRAPcc (a distinct 32-condition
-// space from the integer ISA's 16). It covers steps 3-7 of
-// docs/design-fpu-mmu.md's delivery sequence, deliberately matching the
-// scope of github.com/jenska/m68kasm's own equivalent milestones
-// (internal/asm/instructions/cpu020_fpu.go, cpu020_fpu_movem.go,
-// cpu020_fpu_cond.go, cpu020_fpu_trans.go) — FSAVE/FRESTORE, FMOVEM's
-// FPCR/FPSR/FPIAR control-register-list form, FMOVECR, FSINCOS, the
-// FGETEXP/FGETMAN/FSCALE/FMOD/FREM math-extension bucket, and packed-BCD
-// store (k-factor) are follow-ups, not implemented here.
+// FNOP, FMOVEM (FPn register-list save/restore), the full transcendental
+// function set (FSIN, FCOS, FLOGN, ...), FMOVECR (ROM constant load), and
+// FSINCOS (the one FPU instruction with two destination registers) — and
+// the FPU's own conditional branch/set/trap family, FBcc/FDBcc/FScc/
+// FTRAPcc (a distinct 32-condition space from the integer ISA's 16). It
+// covers steps 3-7 of docs/design-fpu-mmu.md's delivery sequence,
+// deliberately matching the scope of github.com/jenska/m68kasm's own
+// equivalent milestones (internal/asm/instructions/cpu020_fpu.go,
+// cpu020_fpu_movem.go, cpu020_fpu_cond.go, cpu020_fpu_trans.go,
+// cpu020_fpu_sincos.go) — FSAVE/FRESTORE, FMOVEM's FPCR/FPSR/FPIAR
+// control-register-list form, the FGETEXP/FGETMAN/FSCALE/FMOD/FREM
+// math-extension bucket, and packed-BCD store (k-factor) are follow-ups,
+// not implemented here.
 //
 // Every bit position below was read from m68kasm v1.5.0's verified encoder
 // (internal/asm/encode.go's applyField/fpFormatCode/fpRMBit), itself
@@ -298,6 +300,32 @@ func decodeFPGeneric(data []byte, opcode uint16, inst *Instruction, cpu CPU) err
 		return decodeFMOVEM(data, opcode, inst, cpu, word2)
 	}
 
+	// FMOVECR's word2 (0x5C00 | 7-bit ROM index | dst FPn<<7) sets R/M
+	// (bit14) with format-code bits 12-10 = 111 — a value fpFormats marks
+	// reserved for every other instruction, since real hardware format
+	// codes only span 0-6. That makes FMOVECR's top-6-bits pattern
+	// (0xFC00 mask, 0x5C00 value) uniquely identifiable before the format
+	// code is ever interpreted as one. Cross-checked against m68kasm's
+	// defFMOVECR (cpu020_fpu_cond.go).
+	if word2&0xFC00 == 0x5C00 {
+		return decodeFMOVECR(data, inst, word2)
+	}
+
+	// FSINCOS's opmode literal is 0x30, but unlike every fpGeneralOps
+	// entry, bits 2-0 of that literal aren't fixed opmode bits — they're
+	// the cosine result register (FSincosRegCos0 in m68kasm), so the full
+	// 7-bit opmode field varies (0x30-0x37) depending on which FPn holds
+	// the result. Only bits 6-3 (mask 0x78) are the actual fixed selector;
+	// checking the full fpOpMask here would miss every case where the
+	// cosine register's low bits happen to be nonzero. Its word2 also
+	// packs a second destination register that fpOpInfo's single-dst model
+	// has no field for, so this needs its own decode path rather than a
+	// fpGeneralOps table entry either way. Cross-checked against
+	// m68kasm's defFSINCOS (cpu020_fpu_sincos.go).
+	if word2&0x78 == 0x30 {
+		return decodeFSINCOS(data, opcode, inst, cpu, word2)
+	}
+
 	op, ok := fpGeneralOps[word2&fpOpMask]
 	if !ok {
 		return fmt.Errorf("unknown FPU opmode: $%02X", word2&fpOpMask)
@@ -368,6 +396,60 @@ func decodeFPStore(data []byte, opcode uint16, inst *Instruction, cpu CPU, word2
 	srcMeta := registerOperand(RegisterKindFP, uint8((word2>>7)&0x7))
 	mnemonic := "FMOVE." + info.suffix
 	setInstruction(data, inst, offset, mnemonic, srcMeta.Text+", "+dstOperand, srcMeta, dstMeta)
+	return nil
+}
+
+// decodeFMOVECR decodes "FMOVECR #<romIndex>,FPn": loads one of the FPU's
+// built-in ROM constants (pi, e, log10(2), ...) into FPn. word1 carries no
+// <ea> field (FMOVECR never reads memory); word2 is 0x5C00 | the 7-bit ROM
+// index (bits 6-0) | the destination FPn (bits 9-7). Only the numeric
+// "#<n>" form is decoded — GAS additionally accepts named aliases
+// (fp_pi, fp_e, ...) for specific indices at assembly time, which have no
+// decode-time meaning (the numeric index is what's actually encoded either
+// way, and m68kasm itself only implements the numeric form — see
+// cpu020_fpu_cond.go's own doc comment).
+func decodeFMOVECR(data []byte, inst *Instruction, word2 uint16) error {
+	romIndex := uint32(word2 & 0x7F)
+	dstMeta := registerOperand(RegisterKindFP, uint8((word2>>7)&0x7))
+	immText := fmt.Sprintf("#%s", formatImmediate(romIndex, 1))
+	setInstruction(data, inst, 4, "FMOVECR", immText+", "+dstMeta.Text, immediateOperand(immText, romIndex, 1), dstMeta)
+	return nil
+}
+
+// decodeFSINCOS decodes "FSINCOS <ea>,FPc:FPs" / "FSINCOS FPm,FPc:FPs":
+// computes sine and cosine simultaneously from one input, writing two
+// different FPn registers — the only FPU transcendental with two outputs.
+// word2's bits 9-7 hold the sine result (FSincosRegSin7 — the same bit
+// position every other instruction's single destination uses) and bits 2-0
+// hold the cosine result (FSincosRegCos0). Motorola's own mnemonic syntax
+// writes cosine first, "FPc:FPs" — cross-checked against m68kasm's
+// defFSINCOS (cpu020_fpu_sincos.go).
+func decodeFSINCOS(data []byte, opcode uint16, inst *Instruction, cpu CPU, word2 uint16) error {
+	sinReg := uint8((word2 >> 7) & 0x7)
+	cosReg := uint8(word2 & 0x7)
+	dstList := []string{fmt.Sprintf("FP%d", cosReg), fmt.Sprintf("FP%d", sinReg)}
+	dstText := dstList[0] + ":" + dstList[1]
+	dstMeta := registerListOperand(dstText, dstList)
+
+	if word2&fpRMBit == 0 {
+		srcMeta := registerOperand(RegisterKindFP, uint8((word2>>10)&0x7))
+		setInstruction(data, inst, 4, "FSINCOS.X", srcMeta.Text+", "+dstText, srcMeta, dstMeta)
+		return nil
+	}
+
+	fmtCode := (word2 >> 10) & 0x7
+	info := fpFormats[fmtCode]
+	if info.bytes == 0 {
+		return fmt.Errorf("reserved FPU data format code: %d", fmtCode)
+	}
+	mode := uint8((opcode >> 3) & 0x7)
+	reg := uint8(opcode & 0x7)
+	srcOperand, offset, srcMeta, err := decodeFPEAWithSize(data, inst.Address, 4, mode, reg, fmtCode, cpu)
+	if err != nil {
+		return err
+	}
+	mnemonic := "FSINCOS." + info.suffix
+	setInstruction(data, inst, offset, mnemonic, srcOperand+", "+dstText, srcMeta, dstMeta)
 	return nil
 }
 

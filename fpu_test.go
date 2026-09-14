@@ -138,6 +138,63 @@ func TestFPUTranscendentalRoundTrip(t *testing.T) {
 	}
 }
 
+// TestFPUMOVECRRoundTrip covers FMOVECR (ROM constant load) — see
+// decodeFMOVECR in internal/decoders/fpu.go.
+func TestFPUMOVECRRoundTrip(t *testing.T) {
+	testCases := []string{
+		"FMOVECR #0, FP0",
+		"FMOVECR #11, FP2",
+		"FMOVECR #$7F, FP7",
+	}
+	for _, source := range testCases {
+		t.Run(source, func(t *testing.T) {
+			data, err := m68kasm.AssembleStringWithOptions(source, fpuTarget)
+			if err != nil {
+				t.Fatalf("assembler error for %q: %v", source, err)
+			}
+			inst, err := DecodeWithOptions(data, 0, DecodeOptions{CPU: M68020, FPU: true})
+			if err != nil {
+				t.Fatalf("decode error for %q (bytes % X): %v", source, data, err)
+			}
+			if int(inst.Size) != len(data) {
+				t.Errorf("%q: decoded size %d, assembled %d bytes (% X)", source, inst.Size, len(data), data)
+			}
+			if got := inst.Assembly(); got != source {
+				t.Errorf("mismatch\n want: %q\n  got: %q\nbytes: % X", source, got, data)
+			}
+		})
+	}
+}
+
+// TestFPUSINCOSRoundTrip covers FSINCOS (dual sine/cosine result) — see
+// decodeFSINCOS in internal/decoders/fpu.go.
+func TestFPUSINCOSRoundTrip(t *testing.T) {
+	testCases := []string{
+		"FSINCOS.X FP1, FP2:FP3",
+		"FSINCOS.X (A0), FP2:FP3",
+		"FSINCOS.L (A0), FP0:FP1",
+		"FSINCOS.D (A0), FP4:FP5",
+	}
+	for _, source := range testCases {
+		t.Run(source, func(t *testing.T) {
+			data, err := m68kasm.AssembleStringWithOptions(source, fpuFullTarget)
+			if err != nil {
+				t.Fatalf("assembler error for %q: %v", source, err)
+			}
+			inst, err := DecodeWithOptions(data, 0, DecodeOptions{CPU: M68020, FPU: true})
+			if err != nil {
+				t.Fatalf("decode error for %q (bytes % X): %v", source, data, err)
+			}
+			if int(inst.Size) != len(data) {
+				t.Errorf("%q: decoded size %d, assembled %d bytes (% X)", source, inst.Size, len(data), data)
+			}
+			if got := inst.Assembly(); got != source {
+				t.Errorf("mismatch\n want: %q\n  got: %q\nbytes: % X", source, got, data)
+			}
+		})
+	}
+}
+
 // TestFPUCondBranchRoundTrip covers the FPU's conditional branch/set/trap
 // family (FBcc/FDBcc/FScc/FTRAPcc), a distinct 32-condition space from the
 // integer ISA's 16 — see internal/decoders/fpu.go's decodeFBcc and friends.
