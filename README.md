@@ -10,6 +10,8 @@ A Go disassembler for the Motorola 68000 family (68000, 68010, CPU32, 68020, 680
 - Full 68000 instruction coverage (every mnemonic in the standard 68000 opcode map), plus branches, arithmetic, logic, shifts, and BCD.
 - Full 68000 addressing-mode decoding, including PC-relative and immediate forms, plus the 68020+ full extension word (memory indirect, scaled/suppressed index, 0/16/32-bit base and outer displacements).
 - CPU-variant opcode support: `MOVEC`/`MOVES`/`RTD` (68010+), `BGND` (CPU32), and 68020+ additions — `BFxxx` bitfield ops, `CAS`, `CHK2`/`CMP2`, 32×32 `MULU.L`/`MULS.L`/`DIVU.L`/`DIVS.L`, `PACK`/`UNPK`, `CALLM`/`RTM` (68020/68030 only), `TRAPcc`, `LINK.L`, `EXTB.L`, `CHK.L`.
+- Optional FPU decoding (68881/68882, or the 68040/68060's built-in FPU): the full `FMOVE`/`FADD`/`FSUB`/`FMUL`/`FDIV`/`FCMP`/`FABS`/`FNEG`/`FSQRT`/`FTST` family in all 7 data formats (including packed BCD with k-factor), `FMOVEM` (both the `FPn` and `FPCR`/`FPSR`/`FPIAR` register-list forms), the transcendental and math-extension function sets, `FMOVECR`, `FSINCOS`, the `FBcc`/`FDBcc`/`FScc`/`FTRAPcc` condition family, and `FSAVE`/`FRESTORE`.
+- Optional PMMU decoding (68851, or the 68030's built-in PMMU): `PMOVE`'s full register set, `PMOVEFD`, `PFLUSHA`/`PFLUSH`/`PFLUSHS`/`PFLUSHR`, `PLOADR`/`PLOADW`, `PTESTR`/`PTESTW`, `PSAVE`/`PRESTORE`, the `PBcc`/`PDBcc`/`PScc`/`PTRAPcc` condition family, and the 68040's own simplified single-word PMMU forms.
 - Exact decoded instruction length via `Instruction.Size`.
 - Decoded extension words via `Instruction.ExtensionWords`.
 - Structured metadata for mnemonic, operands, branch targets, immediates, and effective-address kinds.
@@ -31,7 +33,21 @@ inst, err := m68kdasm.DecodeWithOptions(data, address, m68kdasm.DecodeOptions{
 
 Available values: `M68000`, `M68010`, `CPU32`, `M68020`, `M68030`, `M68040`, `M68060`. Opcode availability isn't a strict "newer implies older" chain — CPU32 is a 68010-derived core with its own additions and a reduced 68020-style addressing mode, and `CALLM`/`RTM` are valid on 68020/68030 but were removed starting with the 68040 — so each opcode is tagged with the exact set of CPUs it decodes on rather than a minimum version.
 
-Not yet implemented: FPU (68881/68882/68040/68060 built-in) and PMMU (68851/68030) coprocessor instructions, `CAS2`, and CPU32's `TBLS`/`TBLU` table-lookup family, and the 68040-specific `MOVE16`/`CINV`/`CPUSH`. See [docs/design-cpu-variants.md](docs/design-cpu-variants.md) for the full design and rationale.
+Not yet implemented: `CAS2`, CPU32's `TBLS`/`TBLU` table-lookup family, and the 68040-specific `MOVE16`/`CINV`/`CPUSH`. See [docs/design-cpu-variants.md](docs/design-cpu-variants.md) for the full design and rationale.
+
+## Selecting FPU and PMMU support
+
+`DecodeOptions.FPU` and `DecodeOptions.MMU` opt in to decoding the F-line coprocessor instruction set — the 68881/68882 FPU (or a 68040/68060's built-in FPU) and the 68851 PMMU (or a 68030's built-in PMMU), respectively. Both default to `false`, so F-line opcodes render as `DC.W` unless a caller explicitly asks for them. FPU and MMU presence are attached-coprocessor questions independent of `CPU` — a bare 68020 with an external 68881 and a 68040's built-in FPU both just set `FPU: true`.
+
+```go
+inst, err := m68kdasm.DecodeWithOptions(data, address, m68kdasm.DecodeOptions{
+    CPU: m68kdasm.M68020,
+    FPU: true,
+    MMU: true,
+})
+```
+
+FPU coverage is complete for the mainstream instruction set; on the PMMU side, only `PVALID` remains unimplemented. See [docs/design-fpu-mmu.md](docs/design-fpu-mmu.md) for the full design, delivery history, and the handful of real bit-encoding bugs this work found and fixed along the way (including one in the pre-existing integer `Bcc`/`DBcc` branch-target math).
 
 ## Install
 
@@ -291,9 +307,9 @@ Tests include assembler round trips, decoder dispatch parity, streaming decode c
 The decoder uses a two-level dispatch mechanism:
 
 1. A top-level jump table partitions the opcode space by high nibble.
-2. Per-region pattern tables apply masks in precedence order to select the final decoder.
+2. Per-region pattern tables apply masks in precedence order to select the final decoder, gated by target CPU and (for F-line coprocessor opcodes) the `FPU`/`MMU` capability flags.
 
-Opcode masks and values live in `internal/decoders/types.go`, which keeps the decoder table explicit and easy to extend.
+The opcode table lives in `internal/decoders/opcodetable.go`. Instruction decoders are grouped by family across `internal/decoders/*.go` — integer arithmetic, logic, branches, and addressing modes in their own files, with `fpu.go`, `pmmu.go`, `pmmu040.go`, and `pmmu_cond.go` holding the FPU and PMMU coprocessor decoders.
 
 ## License
 
