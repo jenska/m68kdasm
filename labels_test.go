@@ -156,6 +156,54 @@ func TestLabelsWithSymbolizer(t *testing.T) {
 	}
 }
 
+// TestLabelsSymbolizerNotCalledForUnrelatedInstructions confirms applyLabels
+// only re-renders (and so only re-invokes the caller's Symbolizer for)
+// instructions that actually reference a labeled address — not the entire
+// instruction slice. MOVE.L $2000,D1's absolute address is a real address
+// (so the Symbolizer is legitimately asked about it once, during pass 1),
+// but 0x2000 is never a label candidate (MOVE isn't a label-creating
+// mnemonic, and nothing in this range even decodes at 0x2000) — so a
+// correct pass 2 has no reason to touch that instruction again. A caller's
+// Symbolizer may be expensive (a database lookup, a network call);
+// re-invoking it a second time for every instruction during pass 2,
+// regardless of whether labels changed anything about it, would silently
+// double real work that has nothing to do with labels.
+func TestLabelsSymbolizerNotCalledForUnrelatedInstructions(t *testing.T) {
+	data := []byte{
+		0x60, 0x06, // BRA.S $1008 (0x1000, disp8=6) — targets RTS, becomes a label
+		0x22, 0x39, 0x00, 0x00, 0x20, 0x00, // MOVE.L $2000,D1 (0x1002-0x1007) — a real address, never a label
+		0x4E, 0x75, // RTS (0x1008) — the BRA's target
+	}
+
+	calls := map[uint32]int{}
+	symbolizer := SymbolizeFunc(func(address uint32) (string, bool) {
+		calls[address]++
+		return "", false
+	})
+
+	_, err := DisassembleRangeWithOptions(data, 0x1000, DecodeOptions{
+		Symbolizer: symbolizer,
+		Labels:     &LabelOptions{},
+	})
+	if err != nil {
+		t.Fatalf("DisassembleRangeWithOptions: %v", err)
+	}
+
+	// 0x2000 is queried exactly once, from pass 1's own render. If
+	// applyLabels re-rendered every instruction unconditionally (the
+	// pre-fix behavior), MOVE.L would be re-rendered in pass 2 too, even
+	// though 0x2000 never became a label — querying the Symbolizer again
+	// for no reason.
+	if n := calls[0x2000]; n != 1 {
+		t.Errorf("Symbolizer queried for the unrelated MOVE.L's address %d times, want exactly 1", n)
+	}
+	// 0x1008 is a real label: queried at least once for it to have been
+	// discovered at all.
+	if calls[0x1008] == 0 {
+		t.Errorf("expected the Symbolizer to be queried about the labeled address 0x1008 at all")
+	}
+}
+
 // TestLabelsUniversalRendering confirms an address only needs one
 // control-flow reference to become labeled everywhere it's mentioned in
 // the range — a plain data reference (here, an absolute MOVE.L operand,

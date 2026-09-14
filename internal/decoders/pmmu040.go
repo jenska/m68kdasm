@@ -28,13 +28,11 @@ import "fmt"
 //	{"ptestw",   one(0xf548), one(0xfff8), "as", m68040 },
 
 func decodePFLUSHA040(data []byte, opcode uint16, inst *Instruction, cpu CPU) error {
-	setInstruction(data, inst, 2, "PFLUSHA", "")
-	return nil
+	return decodePMMU040NoOperand(data, inst, "PFLUSHA")
 }
 
 func decodePFLUSHAN040(data []byte, opcode uint16, inst *Instruction, cpu CPU) error {
-	setInstruction(data, inst, 2, "PFLUSHAN", "")
-	return nil
+	return decodePMMU040NoOperand(data, inst, "PFLUSHAN")
 }
 
 func decodePFLUSHN040(data []byte, opcode uint16, inst *Instruction, cpu CPU) error {
@@ -64,5 +62,12 @@ func decodePMMU040AnOnly(data []byte, opcode uint16, inst *Instruction, mnemonic
 	reg := uint8(opcode & 0x7)
 	text := fmt.Sprintf("(A%d)", reg)
 	setInstruction(data, inst, 2, mnemonic, text, addrIndirectOperand(EAKindAddressIndirect, reg, text))
+	return nil
+}
+
+// decodePMMU040NoOperand decodes the shared shape of PFLUSHA/PFLUSHAN: no
+// operand at all, just the fixed opcode word.
+func decodePMMU040NoOperand(data []byte, inst *Instruction, mnemonic string) error {
+	setInstruction(data, inst, 2, mnemonic, "")
 	return nil
 }

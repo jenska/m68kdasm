@@ -154,39 +154,38 @@ func applyLabels(instructions []Instruction, opts DecodeOptions) {
 		prefix = opts.Labels.Prefix
 	}
 
-	instByAddr := make(map[uint32]int, len(instructions))
-	for i, inst := range instructions {
-		instByAddr[inst.Address] = i
+	instByAddr := make(map[uint32]struct{}, len(instructions))
+	for _, inst := range instructions {
+		instByAddr[inst.Address] = struct{}{}
 	}
 
-	candidates := make(map[uint32]bool)
+	// Collect candidates and name them in one pass: instByAddr is already
+	// complete, so there's no need to collect every candidate address
+	// first and filter it against instByAddr afterwards. operandTargetAddress
+	// is the same address-extraction precedence formatOperand uses below,
+	// shared rather than duplicated so the two can never silently drift
+	// out of sync.
+	labels := make(map[uint32]string)
 	for _, inst := range instructions {
 		labelCreating := labelCreatingMnemonics[inst.Metadata.MnemonicBase]
 		for _, operand := range inst.Metadata.Operands {
-			if operand.Kind == OperandKindBranchTarget && operand.BranchTarget != nil {
-				candidates[*operand.BranchTarget] = true
+			if operand.Kind != OperandKindBranchTarget && !(operand.Kind == OperandKindEffectiveAddr && labelCreating) {
 				continue
 			}
-			if operand.Kind == OperandKindEffectiveAddr && labelCreating && operand.EffectiveAddress != nil {
-				if addr := operand.EffectiveAddress.ResolvedAddress; addr != nil {
-					candidates[*addr] = true
-				} else if addr := operand.EffectiveAddress.AbsoluteAddress; addr != nil {
-					candidates[*addr] = true
-				}
+			addr, ok := operandTargetAddress(operand)
+			if !ok {
+				continue
 			}
+			if _, ok := instByAddr[addr]; !ok {
+				// Doesn't land on a decoded instruction (self-modifying
+				// code, data-in-code, outside the range, or inside a gap
+				// a partial decode left undecoded) — stays raw hex, never
+				// a dangling label with nothing to attach a definition
+				// line to.
+				continue
+			}
+			labels[addr] = fmt.Sprintf("%s%08X", prefix, addr)
 		}
-	}
-
-	labels := make(map[uint32]string, len(candidates))
-	for addr := range candidates {
-		if _, ok := instByAddr[addr]; !ok {
-			// Doesn't land on a decoded instruction (self-modifying code,
-			// data-in-code, outside the range, or inside a gap a partial
-			// decode left undecoded) — stays raw hex, never a dangling
-			// label with nothing to attach a definition line to.
-			continue
-		}
-		labels[addr] = fmt.Sprintf("%s%08X", prefix, addr)
 	}
 
 	if len(labels) == 0 {
@@ -205,10 +204,26 @@ func applyLabels(instructions []Instruction, opts DecodeOptions) {
 				instructions[i].Label = name
 			}
 		}
-		if len(instructions[i].Metadata.Operands) > 0 {
+		// Only re-render (and, when opts.Symbolizer is set, re-invoke it)
+		// for instructions that actually reference a labeled address —
+		// everything else's Operands is already correct from pass 1.
+		if instructionReferencesAny(instructions[i], labels) {
 			instructions[i].Operands = formatOperands(instructions[i].Metadata.Operands, symbolizer)
 		}
 	}
+}
+
+// instructionReferencesAny reports whether any of inst's operands target
+// an address in addrs.
+func instructionReferencesAny(inst Instruction, addrs map[uint32]string) bool {
+	for _, operand := range inst.Metadata.Operands {
+		if addr, ok := operandTargetAddress(operand); ok {
+			if _, ok := addrs[addr]; ok {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 // labelSymbolizer composes a caller-supplied Symbolizer (tried first, so a
@@ -344,22 +359,32 @@ func formatOperands(operands []Operand, symbolizer Symbolizer) string {
 }
 
 func formatOperand(operand Operand, symbolizer Symbolizer) string {
-	if operand.BranchTarget != nil {
-		if symbol, ok := symbolizer.Symbolize(*operand.BranchTarget); ok {
+	if addr, ok := operandTargetAddress(operand); ok {
+		if symbol, ok := symbolizer.Symbolize(addr); ok {
 			return symbol
 		}
 	}
+	return operand.Text
+}
+
+// operandTargetAddress returns the address an operand statically refers
+// to, if any: a branch target, else a resolved (PC-relative) or absolute
+// effective address. This is the single source of truth for "which
+// address does this operand reference" — used both to decide what a
+// Symbolizer should be asked to resolve (above) and, in applyLabels, to
+// decide which addresses are label candidates and which instructions need
+// re-rendering once labels exist.
+func operandTargetAddress(operand Operand) (uint32, bool) {
+	if operand.BranchTarget != nil {
+		return *operand.BranchTarget, true
+	}
 	if operand.EffectiveAddress != nil {
 		if operand.EffectiveAddress.ResolvedAddress != nil {
-			if symbol, ok := symbolizer.Symbolize(*operand.EffectiveAddress.ResolvedAddress); ok {
-				return symbol
-			}
+			return *operand.EffectiveAddress.ResolvedAddress, true
 		}
 		if operand.EffectiveAddress.AbsoluteAddress != nil {
-			if symbol, ok := symbolizer.Symbolize(*operand.EffectiveAddress.AbsoluteAddress); ok {
-				return symbol
-			}
+			return *operand.EffectiveAddress.AbsoluteAddress, true
 		}
 	}
-	return operand.Text
+	return 0, false
 }
