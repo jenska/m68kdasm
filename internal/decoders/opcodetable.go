@@ -186,6 +186,21 @@ const (
 	valPTRAPccL   = 0xF07B // occupies PScc's mode-7/reg-3 EA slot
 	valPTRAPccNil = 0xF07C // occupies PScc's mode-7/reg-4 EA slot
 
+	// 68040's own single-word PMMU forms — a simplified, re-encoded
+	// interface distinct from the 68030/68851 two-word coprocessor forms
+	// above (0xF000-prefixed, word2-dispatched): each of these is a
+	// single fixed opcode word with, at most, an address register in
+	// bits 2-0 (no <ea> mode field, no coprocessor command word2). See
+	// pmmu040.go. PFLUSHA/PFLUSHAN/PFLUSHN/PFLUSH extend to 68060;
+	// PTESTR/PTESTW do not (68060 dropped them) — see their cpuSet
+	// tagging in opcodetable.go's bucket 0xF.
+	valPFLUSHA040  = 0xF518
+	valPFLUSHAN040 = 0xF510
+	valPFLUSHN040  = 0xF500
+	valPFLUSH040   = 0xF508
+	valPTESTR040   = 0xF568
+	valPTESTW040   = 0xF548
+
 	// FPU "general instruction" family (68881/68882/68040/68060 built-in
 	// FPU): word1 is 0xF200 with the <ea> mode/reg in bits 5-0 (unused,
 	// left 0, for the register-to-register form). See fpu.go for the full
@@ -279,6 +294,18 @@ func mmuExact(value uint16, decoder OpcodeDecoder) OpcodePattern {
 
 func mmuMasked(mask, value uint16, decoder OpcodeDecoder) OpcodePattern {
 	return OpcodePattern{Mask: mask, Value: value, Decoder: decoder, CPUs: cpuAll, RequiresMMU: true}
+}
+
+// mmuExactCPU and mmuMaskedCPU restrict an MMU pattern to a specific cpuSet
+// instead of cpuAll — for the 68040's own single-word PMMU forms, which
+// don't exist on earlier CPUs (and, for PTESTR/PTESTW, not on 68060 either
+// — see their exact-tier registrations in opcodetable.go's bucket 0xF).
+func mmuExactCPU(value uint16, decoder OpcodeDecoder, cpus cpuSet) OpcodePattern {
+	return OpcodePattern{Mask: maskFFFF, Value: value, Decoder: decoder, CPUs: cpus, RequiresMMU: true}
+}
+
+func mmuMaskedCPU(mask, value uint16, decoder OpcodeDecoder, cpus cpuSet) OpcodePattern {
+	return OpcodePattern{Mask: mask, Value: value, Decoder: decoder, CPUs: cpus, RequiresMMU: true}
 }
 
 // opcodeBuckets is a top-level jump table keyed by the opcode's high nibble.
@@ -444,6 +471,18 @@ var opcodeBuckets = [16][]OpcodePattern{
 		mmuMasked(maskFFC0, valPScc, decodePScc),
 		mmuMasked(maskFFF0, valPBccW, decodePBcc),
 		mmuMasked(maskFFF0, valPBccL, decodePBcc),
+
+		// 68040's own single-word PMMU forms — disjoint word1 range
+		// (0xF500-0xF56F) from every PMMU/FPU pattern above and below, so
+		// ordering doesn't matter; cpuSet-restricted (not cpuAll like
+		// every other MMU pattern so far) since these opcodes don't exist
+		// before the 68040, and PTESTR/PTESTW not even on the 68060.
+		mmuExactCPU(valPFLUSHA040, decodePFLUSHA040, cpu040up),
+		mmuExactCPU(valPFLUSHAN040, decodePFLUSHAN040, cpu040up),
+		mmuMaskedCPU(maskFFF8, valPFLUSHN040, decodePFLUSHN040, cpu040up),
+		mmuMaskedCPU(maskFFF8, valPFLUSH040, decodePFLUSH040, cpu040up),
+		mmuMaskedCPU(maskFFF8, valPTESTR040, decodePTESTR040, cpu040),
+		mmuMaskedCPU(maskFFF8, valPTESTW040, decodePTESTW040, cpu040),
 
 		// valFDBcc and the three valFTRAPcc literals must precede valFScc:
 		// each occupies a specific EA sub-slot (address-register-direct for

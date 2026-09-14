@@ -360,16 +360,24 @@ code is verified against the datasheet.
    `(An)+`-only — `decodePSAVE`/`decodePRESTORE` in `pmmu.go`), the one difference being PMMU's word1
    literals (`0xF100`/`0xF140`) are used exactly as GAS's own table lists them, with no
    `fpuWord1Base`-style coprocessor-ID adjustment (PMMU's word1 never carries one). All 4 test cases
-   passed round-trip on the first try. Not yet done, each its own remaining sub-step:
-   - The 68040's own single-word `PFLUSHA`/`PFLUSHAN`/`PFLUSHN`/`PFLUSH`/`PTESTR`/`PTESTW` forms
-     (`cpu040_pmmu.go` in m68kasm) — a simplified, re-encoded interface distinct from 68030/68851's
-     two-word coprocessor forms.
-   - `PVALID` — not yet located in m68kasm's own coverage; may need datasheet verification independent
-     of the encoder-as-ground-truth approach used everywhere else in this doc.
-   `CPU`-tier gating (68851 usable with 68020/68030; confirm which of the above the 68030's own built-in
-   PMMU actually implements vs. requiring an external 68851, per the base-CPU doc's `CALLM`/`RTM`
-   68030-vs-68040 caution) has not yet been applied — every pattern so far is tagged `cpuAll`, mirroring
-   how `RequiresFPU` patterns started, deliberately deferred until real per-CPU differences are confirmed.
+   passed round-trip on the first try. ~~The 68040's own single-word `PFLUSHA`/`PFLUSHAN`/`PFLUSHN`/
+   `PFLUSH`/`PTESTR`/`PTESTW` forms~~ — also done, in a new `pmmu040.go`: a simplified, re-encoded
+   interface distinct from 68030/68851's two-word coprocessor forms — a single fixed opcode word, at
+   most an address register in bits 2-0, no `<ea>` mode field, no coprocessor command word2 at all.
+   `PFLUSHA`/`PFLUSHN`/`PFLUSH` share a mnemonic with their existing two-word 68030/68851 counterparts
+   but never collide at the bit level (word1 `0xF500`-`0xF56F` here vs. `0xF000`-prefixed there), so both
+   opcode-table patterns simply coexist. This is also the **first PMMU pattern with real `CPU`-tier
+   gating**: added `cpu040up` (`internal/decoders/cpu.go`, `cpu040|cpu060`) and `mmuExactCPU`/
+   `mmuMaskedCPU` (the `RequiresMMU`-plus-specific-`cpuSet` analogue of `mmuExact`/`mmuMasked`, which
+   until now always used `cpuAll`) — `PFLUSHA`/`PFLUSHAN`/`PFLUSHN`/`PFLUSH` are tagged `cpu040up`,
+   `PTESTR`/`PTESTW` tagged bare `cpu040` only (the 68060 dropped them, matching GAS's own `m68040up` vs.
+   `m68040` opcode-table tier tags). All 7 round-trip cases and both negative CPU-gating cases (the
+   68040-only encoding not recognized on `M68030`, `PTESTR`'s form not recognized on `M68060`) passed on
+   the first try. Only `PVALID` remains open — not yet located in m68kasm's own coverage; may need
+   datasheet verification independent of the encoder-as-ground-truth approach used everywhere else in
+   this doc. Full `CPU`-tier gating for the rest of the PMMU surface (68851 usable with 68020/68030;
+   confirm which instructions the 68030's own built-in PMMU actually implements vs. requiring an
+   external 68851) remains unapplied — every other PMMU pattern is still tagged `cpuAll`.
 10. ~~**PMMU condition/branch PR**~~ — done: `PBcc` (word/long displacement), `PDBcc`, `PScc`, `PTRAPcc`
     (bare/word/long), in a new `pmmu_cond.go`. Exactly as predicted, a near-mechanical adaptation of
     step 7's `FBcc`/`FDBcc`/`FScc`/`FTRAPcc` code: 16 conditions instead of 32 (`pmmuConditions`, copied

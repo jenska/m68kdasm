@@ -230,6 +230,75 @@ func TestPccRoundTrip(t *testing.T) {
 	}
 }
 
+// TestPMMU040RoundTrip covers the 68040's own single-word PMMU forms — a
+// simplified, re-encoded interface distinct from the 68030/68851 two-word
+// coprocessor forms above, sharing a mnemonic with PFLUSHA/PFLUSHN/PFLUSH
+// but never colliding at the bit level (word1 0xF500-0xF56F here vs.
+// 0xF000-prefixed there) — see internal/decoders/pmmu040.go.
+func TestPMMU040RoundTrip(t *testing.T) {
+	target68040 := m68kasm.ParseOptions{
+		Target: m68kasm.Target{CPU: m68kasm.CPU68040, Features: m68kasm.FeatPMMU},
+	}
+
+	testCases := []string{
+		"PFLUSHA",
+		"PFLUSHAN",
+		"PFLUSHN (A0)",
+		"PFLUSHN (A7)",
+		"PFLUSH (A3)",
+		"PTESTR (A0)",
+		"PTESTW (A5)",
+	}
+
+	for _, source := range testCases {
+		t.Run(source, func(t *testing.T) {
+			data, err := m68kasm.AssembleStringWithOptions(source, target68040)
+			if err != nil {
+				t.Fatalf("assembler error for %q: %v", source, err)
+			}
+			if len(data) != 2 {
+				t.Fatalf("%q: expected a 2-byte single-word encoding, got % X", source, data)
+			}
+			inst, err := DecodeWithOptions(data, 0, DecodeOptions{CPU: M68040, MMU: true})
+			if err != nil {
+				t.Fatalf("decode error for %q (bytes % X): %v", source, data, err)
+			}
+			if int(inst.Size) != len(data) {
+				t.Errorf("%q: decoded size %d, assembled %d bytes (% X)", source, inst.Size, len(data), data)
+			}
+			if got := inst.Assembly(); got != source {
+				t.Errorf("mismatch\n want: %q\n  got: %q\nbytes: % X", source, got, data)
+			}
+		})
+	}
+}
+
+// TestPMMU040NotOnM68030 confirms the 68040's single-word PMMU forms are
+// not recognized when targeting M68030 (where only the older 0xF000-based
+// two-word PFLUSHA form is valid), and that PTESTR/PTESTW's single-word
+// form — dropped on the 68060 — is not recognized there either.
+func TestPMMU040NotOnM68030(t *testing.T) {
+	// PFLUSHAN's 68040-only 2-byte encoding, decoded with CPU: M68030.
+	data := []byte{0xF5, 0x10}
+	inst, err := DecodeWithOptions(data, 0, DecodeOptions{CPU: M68030, MMU: true})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if inst.Mnemonic == "PFLUSHAN" {
+		t.Fatalf("PFLUSHAN's 68040-only single-word form should not decode on M68030")
+	}
+
+	// PTESTR (A0)'s 68040-only encoding, decoded with CPU: M68060.
+	data = []byte{0xF5, 0x68}
+	inst, err = DecodeWithOptions(data, 0, DecodeOptions{CPU: M68060, MMU: true})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if inst.Mnemonic == "PTESTR" {
+		t.Fatalf("PTESTR's single-word form should not decode on M68060 (dropped there)")
+	}
+}
+
 // TestPMMUWithoutOptIn confirms PMMU F-line opcodes still fall through to
 // the unknown-opcode DC.W path when the caller does not opt in via
 // DecodeOptions.MMU, preserving today's behavior by default.
