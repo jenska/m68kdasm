@@ -123,6 +123,39 @@ func TestPFlushLoadTestRoundTrip(t *testing.T) {
 	}
 }
 
+// TestBADBACRoundTrip covers PMOVE's BAD0-BAD7/BAC0-BAC7 forms — a
+// numbered-register shape distinct from every other PMOVE register, with
+// an inverted load/store direction bit — see decodeBADBAC in
+// internal/decoders/pmmu.go.
+func TestBADBACRoundTrip(t *testing.T) {
+	testCases := []string{
+		"PMOVE.L (A0), BAD0",
+		"PMOVE.L (A0), BAD7",
+		"PMOVE.L BAD3, (A0)",
+		"PMOVE.L (A0), BAC0",
+		"PMOVE.L (A0), BAC7",
+		"PMOVE.L BAC5, (A0)",
+	}
+	for _, source := range testCases {
+		t.Run(source, func(t *testing.T) {
+			data, err := m68kasm.AssembleStringWithOptions(source, pmmuTarget)
+			if err != nil {
+				t.Fatalf("assembler error for %q: %v", source, err)
+			}
+			inst, err := DecodeWithOptions(data, 0, DecodeOptions{CPU: M68020, MMU: true})
+			if err != nil {
+				t.Fatalf("decode error for %q (bytes % X): %v", source, data, err)
+			}
+			if int(inst.Size) != len(data) {
+				t.Errorf("%q: decoded size %d, assembled %d bytes (% X)", source, inst.Size, len(data), data)
+			}
+			if got := inst.Assembly(); got != source {
+				t.Errorf("mismatch\n want: %q\n  got: %q\nbytes: % X", source, got, data)
+			}
+		})
+	}
+}
+
 // TestPMMUWithoutOptIn confirms PMMU F-line opcodes still fall through to
 // the unknown-opcode DC.W path when the caller does not opt in via
 // DecodeOptions.MMU, preserving today's behavior by default.

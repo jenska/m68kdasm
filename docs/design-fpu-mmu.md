@@ -4,9 +4,10 @@
 
 **FPU: implemented** (delivery-sequence steps 1-8.5 below — the entire 68881/68882/68040/68060 FPU
 instruction set this doc scoped in, all 7 data formats, both directions). **PMMU: in progress**
-(`PMOVE`/`PMOVEFD`/`PFLUSHA`/`PFLUSH`/`PFLUSHS`/`PFLUSHR`/`PLOADR`/`PLOADW`/`PTESTR`/`PTESTW` done;
-`BAD`/`BAC`, `PSAVE`/`PRESTORE`, 68040's own PMMU forms, and the `Pcc` condition family — steps 9-10 —
-remain). This was originally the "Step 8" follow-up flagged as future work in
+(`PMOVE` — its entire register set, including `BAD`/`BAC` — `PMOVEFD`, `PFLUSHA`, `PFLUSH`, `PFLUSHS`,
+`PFLUSHR`, `PLOADR`, `PLOADW`, `PTESTR`, `PTESTW` all done; `PSAVE`/`PRESTORE`, 68040's own PMMU forms,
+and the `Pcc` condition family — step 10 — remain). This was originally the "Step 8" follow-up flagged
+as future work in
 [design-cpu-variants.md](design-cpu-variants.md), whose Non-goals section explicitly scoped FPU and
 PMMU decoding out: "a large, separate opcode space (cpGEN, F-line `1111`) and should be its own
 follow-up design once base-CPU gating exists." Base-CPU gating (the `CPU`/`cpuSet` machinery) existed
@@ -327,8 +328,8 @@ code is verified against the datasheet.
    way the FMOVECR/FSINCOS/FMOVEM collisions earlier in this sequence were each confirmed. K-factor
    renders as a `{...}` suffix appended directly to the destination `<ea>` text (GAS's own syntax,
    e.g. `FMOVE.P FP3,BUFFER{#-5}`), not a separate operand.
-9. **68851/68030 PMMU PR** — in progress. `PMOVE` (every register except `BAD0`-`BAD7`/`BAC0`-`BAC7`
-   — see below), `PMOVEFD`, and `PFLUSHA` done: `DecodeOptions.MMU` added (deferred from step 2 as
+9. **68851/68030 PMMU PR** — in progress. `PMOVE` (now including `BAD0`-`BAD7`/`BAC0`-`BAC7` — see
+   below), `PMOVEFD`, and `PFLUSHA` done: `DecodeOptions.MMU` added (deferred from step 2 as
    planned, now that real PMMU patterns exist to gate), `RequiresMMU` threaded through `FindDecoder` the
    same way `RequiresFPU` already was, and `decodePMMUGeneral` (`internal/decoders/pmmu.go`) — the single
    dispatch point for every PMMU instruction sharing the bare `0xF000|<ea>` word1 shape, the PMMU
@@ -345,13 +346,14 @@ code is verified against the datasheet.
    bit-identical (an inherent ambiguity, not a decoder gap — m68kasm's own encoder produces the same
    bytes for both spellings). All 19 test cases passed round-trip on the first try, including every
    FC-spec spelling across every instruction family and both the omitted/explicit trailing-`An` cases.
-   Not yet done, each its own remaining sub-step:
-   - `BAD0`-`BAD7`/`BAC0`-`BAC7` (breakpoint address/access registers) — a numbered-register-family
-     shape (register number 0-7 at bits 4-2) distinct from every other `PMOVE` register decoded so far,
-     *and* an inverted load/store direction bit relative to them (0x0200 set means load here, not
-     store) — confirm this by tracing m68kasm's own `cpu030_pmmu_badbac.go` bit math by hand before
-     coding, the same way the FMOVE.P collision was confirmed, given the inverted-bit convention is
-     exactly the kind of easy-to-transpose detail that bit past bugs in this sequence.
+   ~~`BAD0`-`BAD7`/`BAC0`-`BAC7`~~ (breakpoint address/access registers) — also done: a numbered-register
+   shape (register number 0-7 at bits 4-2, `decodeBADBAC` in `pmmu.go`) distinct from every other `PMOVE`
+   register, with an inverted load/store direction bit relative to them (bit 9 set means *load* here,
+   not store — every other `PMOVE` register uses that bit the other way around). Traced m68kasm's own
+   `cpu030_pmmu_badbac.go` bit math by hand before coding, given the inverted-bit convention is exactly
+   the kind of easy-to-transpose detail that bit past bugs in this sequence — all 6 test cases passed
+   round-trip on the first try, confirming the hand derivation held up. This completes `PMOVE`'s entire
+   register set. Not yet done, each its own remaining sub-step:
    - `PSAVE`/`PRESTORE` — structurally identical to `FSAVE`/`FRESTORE` (single-word, no coprocessor
      command word2, `-(An)`-only/`(An)+`-only), should be a quick follow-up once reached.
    - The 68040's own single-word `PFLUSHA`/`PFLUSHAN`/`PFLUSHN`/`PFLUSH`/`PTESTR`/`PTESTW` forms

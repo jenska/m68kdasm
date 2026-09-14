@@ -128,6 +128,26 @@ const (
 	ptestwBase     = 0x8000
 )
 
+// BAD0-BAD7/BAC0-BAC7 (breakpoint address/access registers) are the last
+// PMOVE-movable registers, and genuinely different in shape from every
+// other one: a register NUMBER (0-7) at bits 4-2 rather than a fixed
+// selector, AND an INVERTED load/store direction bit relative to every
+// other PMOVE register — bit 9 set means LOAD here (every other register's
+// word2, per pmmuMoveWord2 above, uses 0x0200/bit9 for STORE). Confirmed
+// against m68kasm's own newPmmuNumberedReg literals (cpu030_pmmu_badbac.go)
+// before coding, given the inverted-bit convention is exactly the kind of
+// easy-to-transpose detail that caused real bugs earlier in this sequence
+// (see docs/design-fpu-mmu.md's FMOVEM/FMOVE.P entries).
+//
+//	BADn load  = 0x7200 | (n<<2)   BADn store = 0x7000 | (n<<2)
+//	BACn load  = 0x7600 | (n<<2)   BACn store = 0x7400 | (n<<2)
+const (
+	badBacFamilyMask = 0xF000
+	badBacFamilyBase = 0x7000
+	badBacIsBAC      = 0x0400 // bit 10: 0 = BAD, 1 = BAC
+	badBacIsLoad     = 0x0200 // bit 9: 1 = load (<ea>,REGn) — inverted, see above
+)
+
 // decodePMMUGeneral decodes every PMMU instruction sharing the bare
 // "0xF000 | <ea>" word1 shape: PMOVE, PMOVEFD, PFLUSHA, PFLUSH, PFLUSHS,
 // PFLUSHR, PLOADR, PLOADW, PTESTR, and PTESTW.
@@ -159,6 +179,8 @@ func decodePMMUGeneral(data []byte, opcode uint16, inst *Instruction, cpu CPU) e
 		return decodePTEST(data, opcode, inst, cpu, "PTESTR", word2)
 	case word2&ptestClassMask == ptestwBase:
 		return decodePTEST(data, opcode, inst, cpu, "PTESTW", word2)
+	case word2&badBacFamilyMask == badBacFamilyBase:
+		return decodeBADBAC(data, opcode, inst, cpu, word2)
 	}
 
 	info, ok := pmmuMoveWord2[word2]
@@ -282,5 +304,30 @@ func decodePTEST(data []byte, opcode uint16, inst *Instruction, cpu CPU, mnemoni
 	anMeta := registerOperand(RegisterKindAddress, anReg)
 	operands := fc.Text + ", " + eaText + ", " + levelText + ", " + anMeta.Text
 	setInstruction(data, inst, offset, mnemonic, operands, fc, eaMeta, levelMeta, anMeta)
+	return nil
+}
+
+// decodeBADBAC decodes PMOVE's BAD0-BAD7/BAC0-BAC7 forms — see the
+// badBacFamilyMask const block above for the bit layout.
+func decodeBADBAC(data []byte, opcode uint16, inst *Instruction, cpu CPU, word2 uint16) error {
+	name := "BAD"
+	if word2&badBacIsBAC != 0 {
+		name = "BAC"
+	}
+	regNum := (word2 >> 2) & 0x7
+	regMeta := Operand{Text: fmt.Sprintf("%s%d", name, regNum), Kind: OperandKindRegister}
+
+	mode := uint8((opcode >> 3) & 0x7)
+	reg := uint8(opcode & 0x7)
+	eaText, offset, eaMeta, err := decodeEAWithSize(data, inst.Address, 4, mode, reg, 4, cpu)
+	if err != nil {
+		return err
+	}
+
+	if word2&badBacIsLoad != 0 {
+		setInstruction(data, inst, offset, "PMOVE.L", eaText+", "+regMeta.Text, eaMeta, regMeta)
+		return nil
+	}
+	setInstruction(data, inst, offset, "PMOVE.L", regMeta.Text+", "+eaText, regMeta, eaMeta)
 	return nil
 }
