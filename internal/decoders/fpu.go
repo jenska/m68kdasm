@@ -9,24 +9,25 @@ import (
 	"strings"
 )
 
-// This file decodes: the FPU "general instruction" family (68881/68882, or
-// the 68040/68060's built-in FPU, which is opcode-compatible for this
-// subset) — FMOVE, FADD, FSUB, FMUL, FDIV, FCMP, FABS, FNEG, FSQRT, FTST,
-// FNOP, FMOVEM (both the FP0-FP7 register-list form and the FPCR/FPSR/
-// FPIAR control-register-list form), the full transcendental function set
-// (FSIN, FCOS, FLOGN, ...), the math-extensions bucket (FGETEXP, FGETMAN,
-// FSCALE, FMOD, FREM), FMOVECR (ROM constant load), and FSINCOS (the one
-// FPU instruction with two destination registers) — the FPU's own
-// conditional branch/set/trap family, FBcc/FDBcc/FScc/FTRAPcc (a distinct
-// 32-condition space from the integer ISA's 16) — and FSAVE/FRESTORE
-// (coprocessor state-frame save/restore; the instruction shell only, not
-// frame contents — see this file's own decodeFSAVE doc comment). It covers
-// steps 3-8 of docs/design-fpu-mmu.md's delivery sequence, deliberately
+// This file decodes the complete FPU instruction set covered by
+// docs/design-fpu-mmu.md's delivery sequence (steps 3-8.5), deliberately
 // matching the scope of github.com/jenska/m68kasm's own equivalent
 // milestones (internal/asm/instructions/cpu020_fpu.go, cpu020_fpu_movem.go,
 // cpu020_fpu_movem_ctrl.go, cpu020_fpu_cond.go, cpu020_fpu_trans.go,
-// cpu020_fpu_mathext.go, cpu020_fpu_sincos.go) — only packed-BCD store
-// (k-factor) remains a follow-up, not implemented here.
+// cpu020_fpu_mathext.go, cpu020_fpu_sincos.go, cpu020_fpu_packed.go):
+// FMOVE, FADD, FSUB, FMUL, FDIV, FCMP, FABS, FNEG, FSQRT, FTST, FNOP,
+// FMOVEM (both the FP0-FP7 register-list form and the FPCR/FPSR/FPIAR
+// control-register-list form), the full transcendental function set (FSIN,
+// FCOS, FLOGN, ...), the math-extensions bucket (FGETEXP, FGETMAN, FSCALE,
+// FMOD, FREM), FMOVECR (ROM constant load), FSINCOS (the one FPU
+// instruction with two destination registers), the FPU's own conditional
+// branch/set/trap family (FBcc/FDBcc/FScc/FTRAPcc, a distinct 32-condition
+// space from the integer ISA's 16), FSAVE/FRESTORE (coprocessor
+// state-frame save/restore — the instruction shell only, not frame
+// contents, see decodeFSAVE's own doc comment), and all 7 FPU data formats
+// including packed BCD's k-factor-driven store direction. Not implemented
+// here (out of scope for this doc's FPU sequence — see PMMU steps 9-10):
+// the 68851/68030 PMMU coprocessor.
 //
 // Every bit position below was read from m68kasm v1.5.0's verified encoder
 // (internal/asm/encode.go's applyField/fpFormatCode/fpRMBit), itself
@@ -342,6 +343,27 @@ func decodeFPGeneric(data []byte, opcode uint16, inst *Instruction, cpu CPU) err
 		return decodeFSINCOS(data, opcode, inst, cpu, word2)
 	}
 
+	// FMOVE.P's store direction (FPn,<ea>{k}, packed BCD) is a genuinely
+	// separate word2 shape, not a `.P`-suffixed row of the ordinary
+	// FMOVE-store family: real hardware has no room for a format-code
+	// field here (a store destination is always packed, implied by the
+	// mnemonic), so bits 13-10 that would otherwise be FFPFormat's R/M+
+	// format bits are repurposed for the k-factor instead. Detected via
+	// bits 15,14,13,11,10 (mask 0xEC00, matching base value 0x6C00 for
+	// both the static and dynamic k-factor sub-forms — bit 12, the only
+	// difference between them, is deliberately excluded from the mask).
+	// This must run before the generic fpGeneralOps dispatch below:
+	// without it, word2&fpOpMask reads as 0x00 (FMOVE's own key) with
+	// R/M=1 and the store-direction bit set, so decodeFPStore would
+	// silently misdecode it as "FMOVE.P <ea>,FPn" — reading the k-factor
+	// bits as if they were a destination FPn register — rather than
+	// erroring or falling through, since format code 3 (Packed) is
+	// otherwise a perfectly valid <ea> format for every OTHER store.
+	// Cross-checked against m68kasm's cpu020_fpu_packed.go.
+	if word2&0xEC00 == 0x6C00 {
+		return decodeFMOVEPStore(data, opcode, inst, cpu, word2)
+	}
+
 	op, ok := fpGeneralOps[word2&fpOpMask]
 	if !ok {
 		return fmt.Errorf("unknown FPU opmode: $%02X", word2&fpOpMask)
@@ -466,6 +488,39 @@ func decodeFSINCOS(data []byte, opcode uint16, inst *Instruction, cpu CPU, word2
 	}
 	mnemonic := "FSINCOS." + info.suffix
 	setInstruction(data, inst, offset, mnemonic, srcOperand+", "+dstText, srcMeta, dstMeta)
+	return nil
+}
+
+// decodeFMOVEPStore decodes "FMOVE.P FPn,<ea>{k}": stores FPn to memory as
+// packed BCD, converting to a k-factor-controlled number of mantissa
+// digits. word2 = 0x6C00 (static k-factor, a 7-bit two's-complement value
+// at bits 6-0) or 0x7C00 (dynamic, bit 12 set and a Dn register number at
+// bits 6-4 instead) | source FPn at bits 9-7. The k-factor renders as a
+// "{...}" suffix directly appended to the destination <ea> text — GAS's
+// own syntax, e.g. "FMOVE.P FP3,BUFFER{#-5}" or "...{D2}" — not a separate
+// operand.
+func decodeFMOVEPStore(data []byte, opcode uint16, inst *Instruction, cpu CPU, word2 uint16) error {
+	mode := uint8((opcode >> 3) & 0x7)
+	reg := uint8(opcode & 0x7)
+	dstOperand, offset, dstMeta, err := decodeFPEAWithSize(data, inst.Address, 4, mode, reg, 3, cpu)
+	if err != nil {
+		return err
+	}
+
+	var kFactorText string
+	if word2&0x1000 != 0 {
+		kReg := uint8((word2 >> 4) & 0x7)
+		kFactorText = fmt.Sprintf("{D%d}", kReg)
+	} else {
+		kVal := int32(word2 & 0x7F)
+		if kVal >= 64 {
+			kVal -= 128
+		}
+		kFactorText = fmt.Sprintf("{#%d}", kVal)
+	}
+
+	srcMeta := registerOperand(RegisterKindFP, uint8((word2>>7)&0x7))
+	setInstruction(data, inst, offset, "FMOVE.P", srcMeta.Text+", "+dstOperand+kFactorText, srcMeta, dstMeta)
 	return nil
 }
 

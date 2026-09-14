@@ -175,6 +175,43 @@ func TestFPUMathExtRoundTrip(t *testing.T) {
 	}
 }
 
+// TestFPUPackedBCDRoundTrip covers the last of the FPU's 7 data formats:
+// packed BCD (.p). The load direction ("FMOVE.P <ea>,FPn") needs no new
+// decode logic (format code 3 through the existing generic <ea> path,
+// same as every other format); the store direction ("FMOVE.P FPn,<ea>{k}")
+// is a genuinely different word2 shape carrying a k-factor instead of a
+// format code — see decodeFMOVEPStore in internal/decoders/fpu.go.
+func TestFPUPackedBCDRoundTrip(t *testing.T) {
+	testCases := []string{
+		"FMOVE.P (A0), FP0",
+		"FMOVE.P (A0)+, FP1",
+
+		"FMOVE.P FP0, (A0){#-5}",
+		"FMOVE.P FP1, (A0){#0}",
+		"FMOVE.P FP2, (A0){#17}",
+		"FMOVE.P FP3, (A0){#-64}",
+		"FMOVE.P FP4, (A0){D2}",
+	}
+	for _, source := range testCases {
+		t.Run(source, func(t *testing.T) {
+			data, err := m68kasm.AssembleStringWithOptions(source, fpuTarget)
+			if err != nil {
+				t.Fatalf("assembler error for %q: %v", source, err)
+			}
+			inst, err := DecodeWithOptions(data, 0, DecodeOptions{CPU: M68020, FPU: true})
+			if err != nil {
+				t.Fatalf("decode error for %q (bytes % X): %v", source, data, err)
+			}
+			if int(inst.Size) != len(data) {
+				t.Errorf("%q: decoded size %d, assembled %d bytes (% X)", source, inst.Size, len(data), data)
+			}
+			if got := inst.Assembly(); got != source {
+				t.Errorf("mismatch\n want: %q\n  got: %q\nbytes: % X", source, got, data)
+			}
+		})
+	}
+}
+
 // TestFPUMOVEMCtrlRoundTrip covers FMOVEM's other register-list form: the
 // FPCR/FPSR/FPIAR control registers (a 3-bit mask, genuinely distinct
 // subsystem from the FP0-FP7 data-register list already covered by

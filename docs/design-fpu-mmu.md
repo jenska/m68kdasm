@@ -2,11 +2,18 @@
 
 ## Status
 
-**Proposed.** Not started. This is the "Step 8" follow-up flagged as future work in
+**FPU: implemented** (delivery-sequence steps 1-8.5 below — the entire 68881/68882/68040/68060 FPU
+instruction set this doc scoped in, all 7 data formats, both directions). **PMMU: not started**
+(steps 9-10). This was originally the "Step 8" follow-up flagged as future work in
 [design-cpu-variants.md](design-cpu-variants.md), whose Non-goals section explicitly scoped FPU and
 PMMU decoding out: "a large, separate opcode space (cpGEN, F-line `1111`) and should be its own
-follow-up design once base-CPU gating exists." Base-CPU gating (the `CPU`/`cpuSet` machinery) now
-exists and is implemented, so this document proposes the follow-up.
+follow-up design once base-CPU gating exists." Base-CPU gating (the `CPU`/`cpuSet` machinery) existed
+by the time this doc was written; the FPU side was then implemented against
+[github.com/jenska/m68kasm](https://github.com/jenska/m68kasm) v1.5.0's verified encoder as ground
+truth, round-tripping every mnemonic through the real assembler rather than trusting bit-layout
+derivations alone (see [internal/decoders/fpu.go](../internal/decoders/fpu.go) and
+[fpu_test.go](../fpu_test.go)) — this caught several real bugs before they shipped (see the delivery
+sequence below for specifics).
 
 ## Current state
 
@@ -244,7 +251,8 @@ code is verified against the datasheet.
    [internal/decoders/fpu.go](../internal/decoders/fpu.go) and [fpu_test.go](../fpu_test.go), verified
    against `github.com/jenska/m68kasm` v1.5.0's encoder rather than a datasheet lookup (a stronger source
    than "verify against the PRM," since it's machine-checked by round-tripping real assembled bytes).
-   Not yet done from the original step 4 scope: packed-decimal (`.p`) store's k-factor — still open.
+   Packed-decimal (`.p`) store's k-factor, deferred from this step's original scope, landed later —
+   see step 8.5 below.
    `FMOVEM` and `FMOVECR` were originally listed here too but landed as later, separately-verified
    steps (5 and 6.5 below).
 5. ~~**FMOVEM PR**~~ — done: static/dynamic register list, to/from general memory or predecrement
@@ -297,6 +305,22 @@ code is verified against the datasheet.
    four FMOVEM word2 shapes — caught by `TestFPUMOVEMCtrlRoundTrip`'s all-three-registers case before
    it shipped wrong, not after. See `decodeFMOVEM` in `internal/decoders/fpu.go` for the full
    derivation.
+8.5. ~~**Packed-BCD (`.p`) store, k-factor**~~ — done, closing out the last open item from step 4 and
+   the FPU side of this doc entirely (all 7 data formats now decode in both directions). The load
+   direction (`FMOVE.P <ea>,FPn`) needed no new code — format code 3 flows through the existing generic
+   `<ea>` path like every other format. The store direction (`FMOVE.P FPn,<ea>{k}`) is a genuinely
+   different word2 shape: real hardware has no format-code field there at all (a store destination is
+   always packed, implied by the mnemonic), so the bits that would otherwise be `FFPFormat`'s R/M+format
+   field are repurposed for a k-factor (mantissa-digit count) instead — a static 7-bit two's-complement
+   value, or a Dn register holding it at runtime. Detected via a `word2&0xEC00==0x6C00` check before the
+   generic dispatch, deliberately excluding bit 12 (the one bit that differs between the static/dynamic
+   sub-forms) from the match mask. Without this check, `decodeFPStore` would have silently misdecoded
+   it as `FMOVE.P <ea>,FPn` — reading the k-factor bits as a destination FPn register — since format
+   code 3 is a perfectly ordinary `<ea>` format for every *other* store direction; verified this was a
+   real, not hypothetical, collision by tracing the bit math by hand before writing the fix, the same
+   way the FMOVECR/FSINCOS/FMOVEM collisions earlier in this sequence were each confirmed. K-factor
+   renders as a `{...}` suffix appended directly to the destination `<ea>` text (GAS's own syntax,
+   e.g. `FMOVE.P FP3,BUFFER{#-5}`), not a separate operand.
 9. **68851/68030 PMMU PR**: `PLOAD`, `PFLUSH`/`PFLUSHA`, `PMOVE`, `PTEST`, `PVALID`, gated on a new `MMU`
    flag (add it to `DecodeOptions` in this step, not before — see step 2's note) and
    `CPU ∈ {68020, 68030}` (68851 is usable with either; 68030's built-in PMMU is a fixed subset — confirm
