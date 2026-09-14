@@ -3,8 +3,10 @@
 ## Status
 
 **FPU: implemented** (delivery-sequence steps 1-8.5 below — the entire 68881/68882/68040/68060 FPU
-instruction set this doc scoped in, all 7 data formats, both directions). **PMMU: not started**
-(steps 9-10). This was originally the "Step 8" follow-up flagged as future work in
+instruction set this doc scoped in, all 7 data formats, both directions). **PMMU: in progress**
+(`PMOVE`/`PMOVEFD`/`PFLUSHA` done; `PFLUSH`/`PLOAD`/`PTEST`, `BAD`/`BAC`, `PSAVE`/`PRESTORE`, 68040's
+own PMMU forms, and the `Pcc` condition family — steps 9-10 — remain). This was originally the "Step 8"
+follow-up flagged as future work in
 [design-cpu-variants.md](design-cpu-variants.md), whose Non-goals section explicitly scoped FPU and
 PMMU decoding out: "a large, separate opcode space (cpGEN, F-line `1111`) and should be its own
 follow-up design once base-CPU gating exists." Base-CPU gating (the `CPU`/`cpuSet` machinery) existed
@@ -16,6 +18,10 @@ derivations alone (see [internal/decoders/fpu.go](../internal/decoders/fpu.go) a
 sequence below for specifics).
 
 ## Current state
+
+*(This section is the original pre-implementation snapshot that motivated this doc — kept for context,
+not maintained to track ongoing progress. See the Status section above and the delivery sequence below
+for what's actually implemented today.)*
 
 - Opcode bucket `0xF` (the top nibble `1111`, i.e. "F-line") in `opcodeBuckets`
   ([internal/decoders/opcodetable.go](../internal/decoders/opcodetable.go)) is **completely empty**.
@@ -321,12 +327,39 @@ code is verified against the datasheet.
    way the FMOVECR/FSINCOS/FMOVEM collisions earlier in this sequence were each confirmed. K-factor
    renders as a `{...}` suffix appended directly to the destination `<ea>` text (GAS's own syntax,
    e.g. `FMOVE.P FP3,BUFFER{#-5}`), not a separate operand.
-9. **68851/68030 PMMU PR**: `PLOAD`, `PFLUSH`/`PFLUSHA`, `PMOVE`, `PTEST`, `PVALID`, gated on a new `MMU`
-   flag (add it to `DecodeOptions` in this step, not before — see step 2's note) and
-   `CPU ∈ {68020, 68030}` (68851 is usable with either; 68030's built-in PMMU is a fixed subset — confirm
-   exactly which instructions the 68030 datasheet says are built-in vs. 68851-only before tagging
-   cpuSets, similar to the base-CPU doc's `CALLM`/`RTM` 68030-vs-68040 caution).
-10. **PMMU condition/branch PR**: `PBcc`/`PDBcc`/`PScc`/`PTRAPcc`, same shape as step 7.
+9. **68851/68030 PMMU PR** — in progress. `PMOVE` (every register except `BAD0`-`BAD7`/`BAC0`-`BAC7`
+   — see below) and `PMOVEFD` done: `DecodeOptions.MMU` added (deferred from step 2 as planned, now that
+   real PMMU patterns exist to gate), `RequiresMMU` threaded through `FindDecoder` the same way
+   `RequiresFPU` already was, and `decodePMOVEFamily` (`internal/decoders/pmmu.go`) decoding `TC`, `DRP`,
+   `SRP`, `CRP`, `CAL`, `VAL`, `SCC`, `AC`, `PCSR`, `TT0`, `TT1`, `MMUSR` — 22 `PMOVE` forms plus 6
+   `PMOVEFD` forms, all verified against `m68kasm`'s encoder and passing round-trip on the first try
+   (no collision or bit-math surprise this time, unlike almost every FPU step). `PFLUSHA` done too,
+   sharing `PMOVE`/`PMOVEFD`'s bare `0xF000|<ea>` word1 shape the same way `FNOP` shares the FPU general
+   instruction family's word1 shape. Not yet done, each its own remaining sub-step:
+   - `PFLUSH`/`PFLUSHS`/`PFLUSHR`, `PLOADR`/`PLOADW`, `PTESTR`/`PTESTW` — share a new "function code
+     specifier" operand shape (`SFC`/`DFC`/a `Dn`/an immediate, a 2-bit mode + 3-bit value field) not
+     needed by anything decoded so far; `PTESTR`/`PTESTW` also have an optional 4th operand (`,An`).
+   - `BAD0`-`BAD7`/`BAC0`-`BAC7` (breakpoint address/access registers) — a numbered-register-family
+     shape (register number 0-7 at bits 4-2) distinct from every other `PMOVE` register decoded so far,
+     *and* an inverted load/store direction bit relative to them (0x0200 set means load here, not
+     store) — confirm this by tracing m68kasm's own `cpu030_pmmu_badbac.go` bit math by hand before
+     coding, the same way the FMOVE.P collision was confirmed, given the inverted-bit convention is
+     exactly the kind of easy-to-transpose detail that bit past bugs in this sequence.
+   - `PSAVE`/`PRESTORE` — structurally identical to `FSAVE`/`FRESTORE` (single-word, no coprocessor
+     command word2, `-(An)`-only/`(An)+`-only), should be a quick follow-up once reached.
+   - The 68040's own single-word `PFLUSHA`/`PFLUSHAN`/`PFLUSHN`/`PFLUSH`/`PTESTR`/`PTESTW` forms
+     (`cpu040_pmmu.go` in m68kasm) — a simplified, re-encoded interface distinct from 68030/68851's
+     two-word coprocessor forms.
+   - `PVALID` — not yet located in m68kasm's own coverage; may need datasheet verification independent
+     of the encoder-as-ground-truth approach used everywhere else in this doc.
+   `CPU`-tier gating (68851 usable with 68020/68030; confirm which of the above the 68030's own built-in
+   PMMU actually implements vs. requiring an external 68851, per the base-CPU doc's `CALLM`/`RTM`
+   68030-vs-68040 caution) has not yet been applied — every pattern so far is tagged `cpuAll`, mirroring
+   how `RequiresFPU` patterns started, deliberately deferred until real per-CPU differences are confirmed.
+10. **PMMU condition/branch PR**: `PBcc`/`PDBcc`/`PScc`/`PTRAPcc` — not started. Structurally the exact
+    same shape as `FBcc`/`FDBcc`/`FScc`/`FTRAPcc` (step 7): 16 conditions instead of 32, word1 base
+    `0xF0xx` instead of `0xF2xx` (no coprocessor-ID bit to fold in — PMMU's word1 never has one, unlike
+    every FPU pattern), otherwise a near-mechanical adaptation of the code already written for step 7.
 
 Each step that touches actual opmode/mode-field bit values (5, 6, 7, 9, 10) should cite its source
 (PRM section/page, or the specific `binutils`/`vasm` table entry cross-checked) in the PR description —

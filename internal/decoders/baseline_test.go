@@ -5,7 +5,7 @@ import "testing"
 func decodeFor(t *testing.T, data []byte, cpu CPU) *Instruction {
 	t.Helper()
 	opcode := uint16(data[0])<<8 | uint16(data[1])
-	decoder := FindDecoder(opcode, cpu, false)
+	decoder := FindDecoder(opcode, cpu, false, false)
 	if decoder == nil {
 		t.Fatalf("no decoder found for opcode %04X on %v", opcode, cpu)
 	}
@@ -57,7 +57,7 @@ func TestDecodeLINK(t *testing.T) {
 	// picks it up once the CPU gate excludes decodeLINKLong, same class of
 	// overlap as EXTB/LEA and TRAPcc/Scc elsewhere in this file).
 	llData := []byte{0x48, 0x0D, 0x00, 0x00, 0x00, 0x10}
-	if d := FindDecoder(0x480D, M68000, false); sameDecoder(d, decodeLINKLong) {
+	if d := FindDecoder(0x480D, M68000, false, false); sameDecoder(d, decodeLINKLong) {
 		t.Fatalf("LINK.L should not decode on M68000")
 	}
 	inst = decodeFor(t, llData, M68020)
@@ -85,7 +85,7 @@ func TestDecodeEXTB(t *testing.T) {
 	// matches this library's existing approach of not validating per-instruction
 	// EA-mode restrictions (see e.g. the TST/ILLEGAL overlap) — we only assert
 	// it does not decode as EXTB.L outside 68020+.
-	if d := FindDecoder(0x49C1, M68000, false); sameDecoder(d, decodeEXTB) {
+	if d := FindDecoder(0x49C1, M68000, false, false); sameDecoder(d, decodeEXTB) {
 		t.Fatalf("EXTB.L should not decode on M68000")
 	}
 	inst := decodeFor(t, []byte{0x49, 0xC1}, M68020) // EXTB.L D1
@@ -102,7 +102,7 @@ func TestDecodeCHK(t *testing.T) {
 	}
 
 	// CHK.L D1,D2 -> opcode 0100 010 100 000 001 = 0x4501, 68020+ only
-	if d := FindDecoder(0x4501, M68000, false); d != nil {
+	if d := FindDecoder(0x4501, M68000, false, false); d != nil {
 		t.Fatalf("CHK.L should not decode on M68000")
 	}
 	inst = decodeFor(t, []byte{0x45, 0x01}, M68020)
@@ -250,7 +250,7 @@ func TestDecodeTRAPcc(t *testing.T) {
 	// falls inside Scc's broader mask once the CPU gate excludes decodeTRAPcc;
 	// on M68000 this is a reserved Scc encoding (invalid EA mode), not a hard
 	// decode failure, consistent with the library's existing approach.
-	if d := FindDecoder(0x51FC, M68000, false); sameDecoder(d, decodeTRAPcc) {
+	if d := FindDecoder(0x51FC, M68000, false, false); sameDecoder(d, decodeTRAPcc) {
 		t.Fatalf("TRAPcc should not decode on M68000")
 	}
 

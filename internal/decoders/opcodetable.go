@@ -161,6 +161,12 @@ const (
 	valSUBXMemW = 0x9148
 	valSUBXMemL = 0x9188
 
+	// PMMU PMOVE/PMOVEFD/PFLUSHA family (68851/68030): word1 is 0xF000
+	// with the <ea> mode/reg in bits 5-0. See pmmu.go for the full
+	// bit-layout derivation. PMMU's word1 has no coprocessor-ID bit (CpId
+	// 0), unlike the FPU family just below (CpId 1, 0xF200).
+	valPMOVE = 0xF000
+
 	// FPU "general instruction" family (68881/68882/68040/68060 built-in
 	// FPU): word1 is 0xF200 with the <ea> mode/reg in bits 5-0 (unused,
 	// left 0, for the register-to-register form). See fpu.go for the full
@@ -212,6 +218,9 @@ type OpcodePattern struct {
 	// so this is orthogonal to CPUs rather than folded into cpuSet — see
 	// docs/design-fpu-mmu.md's "Coprocessor availability model".
 	RequiresFPU bool
+	// RequiresMMU is RequiresFPU's PMMU counterpart, gated by
+	// DecodeOptions.MMU instead.
+	RequiresMMU bool
 }
 
 func exact(value uint16, decoder OpcodeDecoder) OpcodePattern {
@@ -241,6 +250,16 @@ func fpuExact(value uint16, decoder OpcodeDecoder) OpcodePattern {
 
 func fpuMasked(mask, value uint16, decoder OpcodeDecoder) OpcodePattern {
 	return OpcodePattern{Mask: mask, Value: value, Decoder: decoder, CPUs: cpuAll, RequiresFPU: true}
+}
+
+// mmuExact and mmuMasked are fpuExact/fpuMasked's PMMU counterpart: valid
+// on any base CPU tier, gated by RequiresMMU (DecodeOptions.MMU).
+func mmuExact(value uint16, decoder OpcodeDecoder) OpcodePattern {
+	return OpcodePattern{Mask: maskFFFF, Value: value, Decoder: decoder, CPUs: cpuAll, RequiresMMU: true}
+}
+
+func mmuMasked(mask, value uint16, decoder OpcodeDecoder) OpcodePattern {
+	return OpcodePattern{Mask: mask, Value: value, Decoder: decoder, CPUs: cpuAll, RequiresMMU: true}
 }
 
 // opcodeBuckets is a top-level jump table keyed by the opcode's high nibble.
@@ -388,6 +407,11 @@ var opcodeBuckets = [16][]OpcodePattern{
 		masked(maskF000, valSHIFT, decodeShiftRotate), // All ASL/ASR/LSL/LSR/ROL/ROR/ROXL/ROXR
 	},
 	0xF: {
+		// PMMU: word1 0xF000-0xF03F, disjoint from every FPU pattern below
+		// (all of which start at 0xF200+), so ordering relative to them
+		// doesn't matter.
+		mmuMasked(maskFFC0, valPMOVE, decodePMOVEFamily),
+
 		// valFDBcc and the three valFTRAPcc literals must precede valFScc:
 		// each occupies a specific EA sub-slot (address-register-direct for
 		// FDBcc; mode-7/reg-2,3,4 for FTRAPcc) that valFScc's own mask would
@@ -412,8 +436,8 @@ var OpcodeTable = flattenOpcodeBuckets()
 // FindDecoder uses the opcode's high nibble as a jump-table index, then matches
 // only against the patterns that can exist in that 4K region of the opcode space,
 // are valid on the given target CPU, and (for coprocessor patterns) are enabled
-// by the fpu capability flag.
-func FindDecoder(opcode uint16, cpu CPU, fpu bool) OpcodeDecoder {
+// by the fpu/mmu capability flags.
+func FindDecoder(opcode uint16, cpu CPU, fpu, mmu bool) OpcodeDecoder {
 	bit := cpuBit(cpu)
 	for _, pattern := range opcodeBuckets[opcode>>12] {
 		if (opcode & pattern.Mask) != pattern.Value {
@@ -423,6 +447,9 @@ func FindDecoder(opcode uint16, cpu CPU, fpu bool) OpcodeDecoder {
 			continue
 		}
 		if pattern.RequiresFPU && !fpu {
+			continue
+		}
+		if pattern.RequiresMMU && !mmu {
 			continue
 		}
 		return pattern.Decoder

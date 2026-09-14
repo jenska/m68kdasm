@@ -19,6 +19,16 @@ type DecodeOptions struct {
 	// just set FPU: true. The zero value, false, preserves prior behavior
 	// (F-line opcodes render as DC.W). See docs/design-fpu-mmu.md.
 	FPU bool
+	// MMU enables decoding of the 68851/68030 PMMU instruction set (PMOVE,
+	// PMOVEFD, PFLUSHA, and friends — the F-line CpId-0 coprocessor space,
+	// distinct from FPU's CpId-1 space). Like FPU, MMU presence is an
+	// attached-coprocessor question independent of CPU — a bare 68020 with
+	// an external 68851 and a 68030's on-chip PMMU both just set MMU:
+	// true. The zero value, false, preserves prior behavior. Does not
+	// apply to 68040/68060 MMU register access, which uses the ordinary
+	// MOVEC opcode (already decoded unconditionally) rather than any
+	// F-line opcode. See docs/design-fpu-mmu.md.
+	MMU bool
 }
 
 type Symbolizer interface {
