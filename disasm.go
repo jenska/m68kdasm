@@ -112,6 +112,25 @@ func DisassembleRangeWithOptions(data []byte, startAddress uint32, opts DecodeOp
 	return instructions, nil
 }
 
+// labelCreatingMnemonics is the narrow, mnemonic-aware classification that
+// decides which instructions can create a label from their own
+// OperandKindEffectiveAddr operand (see docs/design-labels.md's
+// "Classification creates a label; rendering is universal" — this set
+// decides what gets a name, but every operand referencing that address,
+// regardless of its own instruction's mnemonic, renders it once created).
+// JSR/JMP are unambiguous control-flow transfers. PEA/LEA are included to
+// catch indirect-call trampolines ("LEA sub,A0" then "JSR (A0)") even
+// though this means a LEA/PEA loading a plain data-buffer address becomes
+// a label too — an accepted trade-off, not an oversight (see Decisions in
+// docs/design-labels.md). No other mnemonic is classified this way: a
+// plain MOVE.L $addr,D0 never creates a label on its own.
+var labelCreatingMnemonics = map[string]bool{
+	"JSR": true,
+	"JMP": true,
+	"PEA": true,
+	"LEA": true,
+}
+
 // applyLabels is DisassembleRangeWithOptions's pass 2 (see
 // docs/design-labels.md): pass 1 above decodes sequentially and has no
 // knowledge of instructions later in the stream, so a forward branch can't
@@ -122,13 +141,6 @@ func DisassembleRangeWithOptions(data []byte, startAddress uint32, opts DecodeOp
 // path — via a composite Symbolizer that tries the caller's own first —
 // so label rendering reuses formatOperand's precedence chain rather than
 // adding a parallel one.
-//
-// This step collects only OperandKindBranchTarget candidates (Bcc/BSR/
-// DBcc/FBcc/FDBcc/PBcc/PDBcc, and any future branch-shaped family) — the
-// zero-mnemonic-matching case, since branchOperand tags all of them
-// identically. JSR/JMP/PEA/LEA's MnemonicBase-gated EffectiveAddress
-// candidates are a follow-up (docs/design-labels.md's delivery-sequence
-// step 3), not yet collected here.
 func applyLabels(instructions []Instruction, opts DecodeOptions) {
 	prefix := "l"
 	if opts.Labels.Prefix != "" {
@@ -142,9 +154,18 @@ func applyLabels(instructions []Instruction, opts DecodeOptions) {
 
 	candidates := make(map[uint32]bool)
 	for _, inst := range instructions {
+		labelCreating := labelCreatingMnemonics[inst.Metadata.MnemonicBase]
 		for _, operand := range inst.Metadata.Operands {
 			if operand.Kind == OperandKindBranchTarget && operand.BranchTarget != nil {
 				candidates[*operand.BranchTarget] = true
+				continue
+			}
+			if operand.Kind == OperandKindEffectiveAddr && labelCreating && operand.EffectiveAddress != nil {
+				if addr := operand.EffectiveAddress.ResolvedAddress; addr != nil {
+					candidates[*addr] = true
+				} else if addr := operand.EffectiveAddress.AbsoluteAddress; addr != nil {
+					candidates[*addr] = true
+				}
 			}
 		}
 	}

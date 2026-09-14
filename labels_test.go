@@ -180,6 +180,120 @@ func TestLabelsUniversalRendering(t *testing.T) {
 	}
 }
 
+// TestLabelsJSR covers a JSR to an absolute address inside the range
+// (labeled) and outside the range (left as raw hex) — see step 3 of
+// docs/design-labels.md's delivery sequence.
+func TestLabelsJSR(t *testing.T) {
+	t.Run("inside range", func(t *testing.T) {
+		data := []byte{
+			0x4E, 0xB8, 0x10, 0x06, // JSR $1006.W (0x1000-0x1003, absolute short)
+			0x4E, 0x71, // NOP        (0x1004)
+			0x4E, 0x75, // RTS        (0x1006)
+		}
+		instrs, err := DisassembleRangeWithOptions(data, 0x1000, DecodeOptions{Labels: &LabelOptions{}})
+		if err != nil {
+			t.Fatalf("DisassembleRangeWithOptions: %v", err)
+		}
+		if instrs[0].Assembly() != "JSR l00001006" {
+			t.Errorf("expected JSR operand to render the label, got %q", instrs[0].Assembly())
+		}
+		if instrs[2].Label != "l00001006" {
+			t.Errorf("expected RTS at 0x1006 to carry the label, got %q", instrs[2].Label)
+		}
+	})
+
+	t.Run("outside range", func(t *testing.T) {
+		data := []byte{
+			0x4E, 0xB8, 0x20, 0x00, // JSR $2000.W (well outside this 4-byte range)
+		}
+		instrs, err := DisassembleRangeWithOptions(data, 0x1000, DecodeOptions{Labels: &LabelOptions{}})
+		if err != nil {
+			t.Fatalf("DisassembleRangeWithOptions: %v", err)
+		}
+		if instrs[0].Assembly() != "JSR $2000" {
+			t.Errorf("expected raw hex for an out-of-range JSR target, got %q", instrs[0].Assembly())
+		}
+	})
+}
+
+// TestLabelsJMP mirrors TestLabelsJSR for JMP.
+func TestLabelsJMP(t *testing.T) {
+	data := []byte{
+		0x4E, 0xF8, 0x10, 0x06, // JMP $1006.W (0x1000-0x1003, absolute short)
+		0x4E, 0x71, // NOP       (0x1004)
+		0x4E, 0x75, // RTS       (0x1006)
+	}
+	instrs, err := DisassembleRangeWithOptions(data, 0x1000, DecodeOptions{Labels: &LabelOptions{}})
+	if err != nil {
+		t.Fatalf("DisassembleRangeWithOptions: %v", err)
+	}
+	if instrs[0].Assembly() != "JMP l00001006" {
+		t.Errorf("expected JMP operand to render the label, got %q", instrs[0].Assembly())
+	}
+}
+
+// TestLabelsPEA covers PEA as a label-creating mnemonic.
+func TestLabelsPEA(t *testing.T) {
+	data := []byte{
+		0x48, 0x78, 0x10, 0x06, // PEA $1006.W (0x1000-0x1003, absolute short)
+		0x4E, 0x71, // NOP       (0x1004)
+		0x4E, 0x75, // RTS       (0x1006)
+	}
+	instrs, err := DisassembleRangeWithOptions(data, 0x1000, DecodeOptions{Labels: &LabelOptions{}})
+	if err != nil {
+		t.Fatalf("DisassembleRangeWithOptions: %v", err)
+	}
+	if instrs[0].Assembly() != "PEA l00001006" {
+		t.Errorf("expected PEA operand to render the label, got %q", instrs[0].Assembly())
+	}
+}
+
+// TestLabelsLEATrampoline covers the indirect-call trampoline pattern
+// (LEA sub,A0 then JSR (A0)) Decision 1 in docs/design-labels.md exists to
+// catch: sub's address gets a label even though the JSR (A0) itself can
+// never be traced back to it (a computed jump through a register has no
+// statically knowable target).
+func TestLabelsLEATrampoline(t *testing.T) {
+	data := []byte{
+		0x41, 0xF8, 0x10, 0x08, // LEA $1008.W,A0 (0x1000-0x1003, absolute short)
+		0x4E, 0x90, // JSR (A0)        (0x1004, address-register indirect)
+		0x4E, 0x71, // NOP             (0x1006)
+		0x4E, 0x75, // RTS             (0x1008)
+	}
+	instrs, err := DisassembleRangeWithOptions(data, 0x1000, DecodeOptions{Labels: &LabelOptions{}})
+	if err != nil {
+		t.Fatalf("DisassembleRangeWithOptions: %v", err)
+	}
+	if instrs[0].Assembly() != "LEA l00001008, A0" {
+		t.Errorf("expected LEA operand to render the label, got %q", instrs[0].Assembly())
+	}
+	if instrs[1].Assembly() != "JSR (A0)" {
+		t.Errorf("JSR (A0) has no statically knowable target and should be untouched, got %q", instrs[1].Assembly())
+	}
+	if instrs[3].Label != "l00001008" {
+		t.Errorf("expected RTS at 0x1008 to carry the label, got %q", instrs[3].Label)
+	}
+}
+
+// TestLabelsLEADataBuffer documents the accepted trade-off from Decision 1:
+// a LEA loading a plain data-buffer address — never itself a branch/JSR/
+// JMP target — still gets a label. This is a deliberate scope choice, not
+// a bug.
+func TestLabelsLEADataBuffer(t *testing.T) {
+	data := []byte{
+		0x41, 0xF8, 0x10, 0x06, // LEA $1006.W,A0 (0x1000-0x1003, absolute short)
+		0x4E, 0x71, // NOP             (0x1004)
+		0x4E, 0x71, // "buffer" (any valid bytes; content is irrelevant to this test) (0x1006)
+	}
+	instrs, err := DisassembleRangeWithOptions(data, 0x1000, DecodeOptions{Labels: &LabelOptions{}})
+	if err != nil {
+		t.Fatalf("DisassembleRangeWithOptions: %v", err)
+	}
+	if instrs[0].Assembly() != "LEA l00001006, A0" {
+		t.Errorf("expected the data-buffer LEA to be labeled too (accepted trade-off), got %q", instrs[0].Assembly())
+	}
+}
+
 // TestLabelsCustomPrefix covers LabelOptions.Prefix.
 func TestLabelsCustomPrefix(t *testing.T) {
 	data := []byte{

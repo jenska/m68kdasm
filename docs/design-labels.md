@@ -2,12 +2,12 @@
 
 ## Status
 
-**In progress.** Steps 1, 2, and (as it turned out, for free — see step 2's note below) 4 are done: the
-ELF options-plumbing prerequisite, `LabelOptions`/`DecodeOptions.Labels`/`Instruction.Label`, and the
-full two-pass `applyLabels` implementation for the `Bcc`/`BSR`/`DBcc`/`FBcc`/`FDBcc`/`PBcc`/`PDBcc`
-branch family — including universal rendering, which needed no dedicated work at all. Only step 3
-(`JSR`/`JMP`/`PEA`/`LEA` classification) and step 5 (`String()` formatting) remain. This is a new,
-independent feature — it does not follow on from [design-cpu-variants.md](design-cpu-variants.md) or
+**In progress.** Steps 1-4 are done: the ELF options-plumbing prerequisite,
+`LabelOptions`/`DecodeOptions.Labels`/`Instruction.Label`, the full two-pass `applyLabels`
+implementation for the `Bcc`/`BSR`/`DBcc`/`FBcc`/`FDBcc`/`PBcc`/`PDBcc` branch family plus
+`JSR`/`JMP`/`PEA`/`LEA` classification, and universal rendering (which needed no dedicated work at all
+— see step 2's note below). Only step 5 (`String()` formatting) remains. This is a new, independent
+feature — it does not follow on from [design-cpu-variants.md](design-cpu-variants.md) or
 [design-fpu-mmu.md](design-fpu-mmu.md) and has no dependency on either being finished (both happen to be
 done as of this writing, but nothing here requires that).
 
@@ -327,9 +327,16 @@ Every existing test should pass unmodified; nothing here touches `internal/decod
    already renders the label, confirmed by `TestLabelsUniversalRendering` — with none of step 3's
    `JSR`/`JMP`/`PEA`/`LEA` classification landed yet. Step 4 below is now just documentation of an
    already-verified property, not remaining work.
-3. **`JSR`/`JMP`/`PEA`/`LEA` PR**: add the `MnemonicBase`-gated `OperandKindEffectiveAddr` candidate
-   collection for all four mnemonics — the only remaining classification work; rendering already handles
-   whatever this step collects, per the note above.
+3. ~~**`JSR`/`JMP`/`PEA`/`LEA` PR**~~ — done: `labelCreatingMnemonics` (a plain `map[string]bool`,
+   `disasm.go`) gates `OperandKindEffectiveAddr` candidate collection to these four mnemonics via
+   `Metadata.MnemonicBase`, contributing `ResolvedAddress` if set else `AbsoluteAddress` — exactly the
+   rule this doc specified, no surprises. Verified: `JSR`/`JMP`/`PEA` to an absolute address inside the
+   range get labeled (and outside the range, correctly don't); the `LEA sub,A0` / `JSR (A0)` trampoline
+   pattern labels `sub`'s address while leaving `JSR (A0)` itself untouched (a computed jump through a
+   register contributes no candidate — `ResolvedAddress`/`AbsoluteAddress` are both nil for
+   register-indirect addressing, so the classification rule naturally does nothing there, no special
+   case needed); and a `LEA` loading a plain data-buffer address gets labeled too, confirming Decision 1's
+   accepted trade-off actually behaves as decided, not just as described.
 4. ~~**Universal-rendering PR**~~ — see step 2's note: this fell out of the pass-2 implementation for
    free and needs no dedicated work.
 5. **`String()`/formatting PR**: decide and land the exact label-line rendering convention, informed by
