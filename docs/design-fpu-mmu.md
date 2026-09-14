@@ -16,12 +16,15 @@ exists and is implemented, so this document proposes the follow-up.
   through `FindDecoder` and renders as the generic `DC.W` unknown-opcode pseudo-instruction, on every
   CPU. This is true even for `M68040`/`M68060`, which have a real built-in FPU: today's decoder cannot
   tell an `FADD` apart from garbage.
-- `controlRegisterNames` in [internal/decoders/move.go:193](../internal/decoders/move.go#L193) (used by
-  `MOVEC`, 68010+) only lists `SFC`/`DFC`/`USP`/`VBR`/`CACR`/`CAAR`. It is missing every 68040/68060
-  MMU- and cache-related control register (`TC`, `ITT0`/`ITT1`, `DTT0`/`DTT1`, `URP`, `SRP`, `MMUSR`,
-  `BUSCR`, `PCR`, `MSP`, `ISP`) — these are accessed via the *existing* `MOVEC` opcode, not via new
-  F-line opcodes, so this gap is cheap to close independent of everything else in this doc (see
-  "68040/68060 MMU" below).
+- **Correction (this doc originally claimed a gap here that doesn't exist — an earlier pass grepped
+  `move.go` with an incomplete keyword list and never actually read the full map):**
+  `controlRegisterNames` in [internal/decoders/move.go:193](../internal/decoders/move.go#L193) (used by
+  `MOVEC`, 68010+) already lists `SFC`/`DFC`/`USP`/`VBR`/`CACR`/`CAAR`/`MSP`/`ISP`/`TC`/`ITT0`/`ITT1`/
+  `DTT0`/`DTT1`/`MMUSR`/`URP`/`SRP`/`PCR` — it was filled in as part of the original multi-CPU-variant
+  work (commit `5c40fc0`), before this document existed. So 68040/68060 MMU-register disassembly via
+  `MOVEC` is **already implemented**, not a gap this doc needs to close. The one register still missing
+  from the map is 68060's `BUSCR` (Bus Control Register, code `0x008` per Motorola's MC68060 User's
+  Manual — verify before adding, same as everything else in this doc); everything else is done.
 - The `CPU`/`cpuSet` gating model (`decoders.CPU`, `cpuSet`, `exactCPU`/`maskedCPU`,
   `FindDecoder(opcode, cpu)`, and the `cpu CPU` parameter already threaded through every
   `OpcodeDecoder`) is exactly the mechanism this doc needs to reuse — see "Coprocessor availability
@@ -48,9 +51,9 @@ exists and is implemented, so this document proposes the follow-up.
 - Decode the **68040/68060 built-in FPU**, which is opcode-compatible with 68881/68882 for the
   hardware-implemented subset (the rest traps and is emulated in software — not disassembler-visible;
   the encoding is unchanged either way).
-- Decode 68040/68060 **MMU control-register access via `MOVEC`** by extending
-  `controlRegisterNames` — this is the cheap, low-risk, high-value first slice of "MMU support" and
-  does not touch F-line at all.
+- ~~Decode 68040/68060 **MMU control-register access via `MOVEC`**~~ — already done (see the
+  "Current state" correction above); only 68060's `BUSCR` register is still missing from
+  `controlRegisterNames`, a one-line follow-up whenever someone verifies its exact code.
 - Decode the classic **68851 discrete PMMU** and **68030 built-in PMMU** F-line instruction set:
   `PLOAD`, `PFLUSH`, `PFLUSHA`, `PMOVE`, `PTEST`, `PVALID`, and the PMMU condition/branch family
   (`PBcc`, `PDBcc`, `PScc`, `PTRAPcc`), gated appropriately (68851 usable with 68020/68030; the 68030's
@@ -220,51 +223,50 @@ pass 1/2/4/4/8/12/12 for byte/word/long/single/double/extended/packed respective
 parameter, with the byte-count-to-format mapping only mattering at the caller (FP decoder) and
 render-time formatting layer, not inside `decodeEAWithSize` itself.
 
-## 68040/68060 MMU via `MOVEC` (do this first, independent of everything else)
+## 68040/68060 MMU via `MOVEC`
 
-Unlike PMMU F-line decoding, this needs **no new opcode patterns, no new operand types, and no new CPU
-flag** — it's purely extending the existing `controlRegisterNames` map
-([internal/decoders/move.go:193](../internal/decoders/move.go#L193)) with 68040/68060's MMU/cache
-registers (`TC`, `ITT0`, `ITT1`, `DTT0`, `DTT1`, `MMUSR`, `URP`, `SRP` for 68040; add `BUSCR`, `PCR` for
-68060) plus the missing stack-pointer variants (`MSP`, `ISP`). Each register code needs its `cpuSet`
-verified against the datasheet (some are 68040-only, some 68060-only, `CACR`'s bit layout even changes
-meaning between 68020/68030 and 68040/68060 though the *opcode* is identical) — but this is a small,
-low-risk, mechanical table extension with an existing decoder (`decodeMOVEC`) that needs no logic
-changes. Recommend landing this as its own small PR before any F-line work, since it delivers real MMU
-disassembly value (68040/68060 Linux/NetBSD kernel boot code reads/writes these constantly) with a
-fraction of the risk.
+Already implemented (see the "Current state" correction above) — `controlRegisterNames`
+([internal/decoders/move.go:193](../internal/decoders/move.go#L193)) already covers `TC`/`ITT0`/`ITT1`/
+`DTT0`/`DTT1`/`MMUSR`/`URP`/`SRP`/`PCR`/`MSP`/`ISP`. Only `BUSCR` (68060) remains, whenever its exact
+code is verified against the datasheet.
 
 ## Suggested delivery sequence
 
-1. **68040/68060 MMU-via-MOVEC PR**: extend `controlRegisterNames` per above. No new infrastructure.
-2. **Capability-flag plumbing PR**: add `FPU`/`MMU` to `DecodeOptions`, thread through to `FindDecoder`
-   alongside `cpu`, add `RegisterKindFP` and the FP/MMU register/condition name tables, with F-line
-   still recognizing zero opcodes (no behavior change yet) — mirrors the base-CPU doc's "plumbing
-   first, opcodes later" sequencing, and keeps the mechanical/semantic review split.
-3. **FPU register-to-register PR**: the general FP instruction (`0xF2xx` group) restricted to R/M=0
-   (both operands FP registers) — smallest correctly-scoped slice: `FMOVE`, `FADD`, `FSUB`, `FMUL`,
-   `FDIV`, `FCMP`, `FTST`, `FABS`, `FNEG`, `FSQRT` register-to-register forms, plus `FMOVECR` (constant
-   ROM). Verify the opmode field against the datasheet per the "risk" note above; build a table-driven
-   test fixture from known-good disassembly (e.g. cross-check against `objdump -m68040` or `vasm`
-   output) before merging.
-4. **FPU memory-operand PR**: R/M=1 forms (`<ea>` source with a data-format field), all 7 FP data
-   formats, `FMOVEM` (register list to/from memory, and to/from `FPCR`/`FPSR`/`FPIAR`), k-factor
-   handling for packed-decimal `FMOVE`.
-5. **FPU transcendental PR**: `FSIN`/`FCOS`/`FTAN`/`FATAN`/`FLOGN`/`FLOG2`/`FETOX`/`FGETEXP`/
+1. ~~**68040/68060 MMU-via-MOVEC PR**~~ — already done; not part of this doc's remaining work.
+2. ~~**Capability-flag plumbing PR**~~ — done: `DecodeOptions.FPU` exists, `RegisterKindFP` added, gating
+   threaded through `FindDecoder` via `OpcodePattern.RequiresFPU`. (`MMU` was deliberately *not* added
+   yet, to avoid a dead/no-op public field ahead of any PMMU pattern actually using it — add it in the
+   PMMU step instead.)
+3. ~~**FPU register-to-register PR**~~ and 4. ~~**FPU memory-operand PR**~~ — done, and combined into one
+   slice rather than split: `FMOVE`/`FADD`/`FSUB`/`FMUL`/`FDIV`/`FCMP`/`FABS`/`FNEG`/`FSQRT`/`FTST`/
+   `FNOP`, register-to-register and `<ea>` forms (load and store), all 7 data formats including verified
+   IEEE-754/68881-extended-precision immediate decoding. See
+   [internal/decoders/fpu.go](../internal/decoders/fpu.go) and [fpu_test.go](../fpu_test.go), verified
+   against `github.com/jenska/m68kasm` v1.5.0's encoder rather than a datasheet lookup (a stronger source
+   than "verify against the PRM," since it's machine-checked by round-tripping real assembled bytes).
+   Not yet done from the original step 4 scope: `FMOVEM` and packed-decimal (`.p`) store's k-factor —
+   still open, see steps below. `FMOVECR` (ROM constant load) is also still open.
+5. **FMOVEM PR**: register list (static mask or dynamic Dn-specified) to/from memory (general and
+   predecrement addressing), and to/from the `FPCR`/`FPSR`/`FPIAR` control registers — mirrors the
+   existing integer `MOVEM` decoder's shape. m68kasm v1.5.0 has this
+   (`internal/asm/instructions/cpu020_fpu_movem.go`/`cpu020_fpu_movem_ctrl.go`), so it's verifiable the
+   same way step 3/4 was.
+6. **FPU transcendental PR**: `FSIN`/`FCOS`/`FTAN`/`FATAN`/`FLOGN`/`FLOG2`/`FETOX`/`FGETEXP`/
    `FGETMAN`/etc. — same opcode shape as step 3/4, just more opmode table entries; separated only
    because there are ~30 of them and reviewing that many mnemonic/opmode pairs at once against a
    datasheet is its own chunk of verification work.
-6. **FP condition/branch PR**: `FBcc` (short/long displacement, mirroring integer `Bcc`'s existing
+7. **FP condition/branch PR**: `FBcc` (short/long displacement, mirroring integer `Bcc`'s existing
    pattern), `FDBcc`, `FScc`, `FTRAPcc`, with the new 6-bit FP condition table.
-7. **FSAVE/FRESTORE PR** (optional, low priority): decode the instruction shell (`<ea>`, format byte)
+8. **FSAVE/FRESTORE PR** (optional, low priority): decode the instruction shell (`<ea>`, format byte)
    without interpreting frame contents, per Non-goals.
-8. **68851/68030 PMMU PR**: `PLOAD`, `PFLUSH`/`PFLUSHA`, `PMOVE`, `PTEST`, `PVALID`, gated on the `MMU`
-   flag and `CPU ∈ {68020, 68030}` (68851 is usable with either; 68030's built-in PMMU is a fixed
-   subset — confirm exactly which instructions the 68030 datasheet says are built-in vs. 68851-only
-   before tagging cpuSets, similar to the base-CPU doc's `CALLM`/`RTM` 68030-vs-68040 caution).
-9. **PMMU condition/branch PR**: `PBcc`/`PDBcc`/`PScc`/`PTRAPcc`, same shape as step 6.
+9. **68851/68030 PMMU PR**: `PLOAD`, `PFLUSH`/`PFLUSHA`, `PMOVE`, `PTEST`, `PVALID`, gated on a new `MMU`
+   flag (add it to `DecodeOptions` in this step, not before — see step 2's note) and
+   `CPU ∈ {68020, 68030}` (68851 is usable with either; 68030's built-in PMMU is a fixed subset — confirm
+   exactly which instructions the 68030 datasheet says are built-in vs. 68851-only before tagging
+   cpuSets, similar to the base-CPU doc's `CALLM`/`RTM` 68030-vs-68040 caution).
+10. **PMMU condition/branch PR**: `PBcc`/`PDBcc`/`PScc`/`PTRAPcc`, same shape as step 7.
 
-Each step that touches actual opmode/mode-field bit values (3, 4, 5, 6, 8, 9) should cite its source
+Each step that touches actual opmode/mode-field bit values (5, 6, 7, 9, 10) should cite its source
 (PRM section/page, or the specific `binutils`/`vasm` table entry cross-checked) in the PR description —
 this is the FPU/MMU-specific analogue of the base-CPU doc's "must precede" precedence comments: a
 place where silent correctness bugs are easy to introduce and hard to notice without a fixture corpus.
