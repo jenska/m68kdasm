@@ -175,6 +175,17 @@ const (
 	valPSAVE    = 0xF100
 	valPRESTORE = 0xF140
 
+	// PMMU conditional branch/set/trap family (16 conditions, unlike the
+	// FPU's 32) — see pmmu_cond.go's decodePBcc/decodePDBcc/decodePScc/
+	// decodePTRAPcc for the bit layout.
+	valPBccW      = 0xF080 // word displacement
+	valPBccL      = 0xF0C0 // long displacement
+	valPDBcc      = 0xF048 // occupies PScc's address-register-direct EA slot
+	valPScc       = 0xF040
+	valPTRAPccW   = 0xF07A // occupies PScc's mode-7/reg-2 EA slot
+	valPTRAPccL   = 0xF07B // occupies PScc's mode-7/reg-3 EA slot
+	valPTRAPccNil = 0xF07C // occupies PScc's mode-7/reg-4 EA slot
+
 	// FPU "general instruction" family (68881/68882/68040/68060 built-in
 	// FPU): word1 is 0xF200 with the <ea> mode/reg in bits 5-0 (unused,
 	// left 0, for the register-to-register form). See fpu.go for the full
@@ -421,6 +432,18 @@ var opcodeBuckets = [16][]OpcodePattern{
 		mmuMasked(maskFFC0, valPMOVE, decodePMMUGeneral),
 		mmuMasked(maskFFC0, valPSAVE, decodePSAVE),
 		mmuMasked(maskFFC0, valPRESTORE, decodePRESTORE),
+
+		// valPDBcc and the three valPTRAPcc literals must precede valPScc:
+		// same EA-sub-slot precedence shape as valFDBcc/valFTRAPcc ahead
+		// of valFScc just below (and integer DBcc/TRAPcc ahead of Scc in
+		// bucket 0x5).
+		mmuMasked(maskFFF8, valPDBcc, decodePDBcc),
+		mmuExact(valPTRAPccNil, decodePTRAPccBare),
+		mmuExact(valPTRAPccW, decodePTRAPccWord),
+		mmuExact(valPTRAPccL, decodePTRAPccLong),
+		mmuMasked(maskFFC0, valPScc, decodePScc),
+		mmuMasked(maskFFF0, valPBccW, decodePBcc),
+		mmuMasked(maskFFF0, valPBccL, decodePBcc),
 
 		// valFDBcc and the three valFTRAPcc literals must precede valFScc:
 		// each occupies a specific EA sub-slot (address-register-direct for

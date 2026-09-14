@@ -187,6 +187,49 @@ func TestPSAVERestoreRoundTrip(t *testing.T) {
 	}
 }
 
+// TestPccRoundTrip covers the PMMU's own conditional branch/set/trap
+// family (PBcc/PDBcc/PScc/PTRAPcc), a 16-condition space structurally
+// identical to FBcc/FDBcc/FScc/FTRAPcc (fpu_test.go) — see
+// internal/decoders/pmmu_cond.go.
+func TestPccRoundTrip(t *testing.T) {
+	testCases := []string{
+		"PBBS.W $0010",
+		"PBBC.L $00010000",
+		"PBAS.W $0004",
+
+		"PDBLS D0, $0010",
+		"PDBLC D3, $0020",
+
+		"PSSS D0",
+		"PSSC (A0)",
+		"PSWS (A0)+",
+		"PSWC -(A0)",
+
+		"PTRAPGS",
+		"PTRAPGC.W #$04D2",
+		"PTRAPCS.L #$0001E240",
+	}
+
+	for _, source := range testCases {
+		t.Run(source, func(t *testing.T) {
+			data, err := m68kasm.AssembleStringWithOptions(source, pmmuTarget)
+			if err != nil {
+				t.Fatalf("assembler error for %q: %v", source, err)
+			}
+			inst, err := DecodeWithOptions(data, 0, DecodeOptions{CPU: M68020, MMU: true})
+			if err != nil {
+				t.Fatalf("decode error for %q (bytes % X): %v", source, data, err)
+			}
+			if int(inst.Size) != len(data) {
+				t.Errorf("%q: decoded size %d, assembled %d bytes (% X)", source, inst.Size, len(data), data)
+			}
+			if got := inst.Assembly(); got != source {
+				t.Errorf("mismatch\n want: %q\n  got: %q\nbytes: % X", source, got, data)
+			}
+		})
+	}
+}
+
 // TestPMMUWithoutOptIn confirms PMMU F-line opcodes still fall through to
 // the unknown-opcode DC.W path when the caller does not opt in via
 // DecodeOptions.MMU, preserving today's behavior by default.

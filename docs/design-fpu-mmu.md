@@ -3,11 +3,13 @@
 ## Status
 
 **FPU: implemented** (delivery-sequence steps 1-8.5 below — the entire 68881/68882/68040/68060 FPU
-instruction set this doc scoped in, all 7 data formats, both directions). **PMMU: in progress**
-(`PMOVE` — its entire register set, including `BAD`/`BAC` — `PMOVEFD`, `PFLUSHA`, `PFLUSH`, `PFLUSHS`,
-`PFLUSHR`, `PLOADR`, `PLOADW`, `PTESTR`, `PTESTW`, `PSAVE`, `PRESTORE` all done; only the 68040's own
-PMMU forms and the `Pcc` condition family — step 10 — remain). This was originally the "Step 8"
-follow-up flagged as future work in
+instruction set this doc scoped in, all 7 data formats, both directions). **PMMU: implemented**
+(delivery-sequence steps 9-10 — every mainstream 68851/68030 PMMU instruction: `PMOVE`'s entire
+register set, `PMOVEFD`, `PFLUSHA`, `PFLUSH`, `PFLUSHS`, `PFLUSHR`, `PLOADR`, `PLOADW`, `PTESTR`,
+`PTESTW`, `PSAVE`, `PRESTORE`, and the full `Pcc` condition/branch/set/trap family). Two narrow items
+remain open (the 68040's own simplified single-word PMMU forms, and `PVALID`) — see step 10's own notes
+below — but this doc's originally-scoped FPU and PMMU work is otherwise done. This was originally the
+"Step 8" follow-up flagged as future work in
 [design-cpu-variants.md](design-cpu-variants.md), whose Non-goals section explicitly scoped FPU and
 PMMU decoding out: "a large, separate opcode space (cpGEN, F-line `1111`) and should be its own
 follow-up design once base-CPU gating exists." Base-CPU gating (the `CPU`/`cpuSet` machinery) existed
@@ -368,10 +370,23 @@ code is verified against the datasheet.
    PMMU actually implements vs. requiring an external 68851, per the base-CPU doc's `CALLM`/`RTM`
    68030-vs-68040 caution) has not yet been applied — every pattern so far is tagged `cpuAll`, mirroring
    how `RequiresFPU` patterns started, deliberately deferred until real per-CPU differences are confirmed.
-10. **PMMU condition/branch PR**: `PBcc`/`PDBcc`/`PScc`/`PTRAPcc` — not started. Structurally the exact
-    same shape as `FBcc`/`FDBcc`/`FScc`/`FTRAPcc` (step 7): 16 conditions instead of 32, word1 base
-    `0xF0xx` instead of `0xF2xx` (no coprocessor-ID bit to fold in — PMMU's word1 never has one, unlike
-    every FPU pattern), otherwise a near-mechanical adaptation of the code already written for step 7.
+10. ~~**PMMU condition/branch PR**~~ — done: `PBcc` (word/long displacement), `PDBcc`, `PScc`, `PTRAPcc`
+    (bare/word/long), in a new `pmmu_cond.go`. Exactly as predicted, a near-mechanical adaptation of
+    step 7's `FBcc`/`FDBcc`/`FScc`/`FTRAPcc` code: 16 conditions instead of 32 (`pmmuConditions`, copied
+    verbatim from m68kasm's own table), word1 base `0xF0xx` instead of `0xF2xx` (no coprocessor-ID bit
+    to fold in), and reusing `branchTarget` (`branch.go`) for the target-address math — the same helper
+    that fixed the real `.W`/`.L`/`DBcc` bug found while building step 7. `PDBcc`/`PTRAPcc` occupy `PScc`'s
+    own EA sub-slots exactly like their FPU (and integer) counterparts, so they're registered ahead of it
+    in `opcodetable.go` for the same reason. All 12 test cases passed round-trip on the first try — the
+    only PMMU sub-step so far with zero surprises of any kind, reflecting how directly step 7's already-
+    verified code and bug-fix carried over.
+
+    **This completes every mainstream 68851/68030 PMMU instruction this doc scoped in — steps 9 and 10
+    are both done.** Two items remain open, each already flagged above as its own follow-up rather than
+    blocking this doc's completion: the 68040's own simplified single-word PMMU forms, and `PVALID`
+    (not yet located in m68kasm's own coverage — would need direct datasheet verification, unlike
+    everything else in this doc). `CPU`-tier gating (which PMMU instructions the 68030's own built-in
+    PMMU actually implements vs. requiring an external 68851) also remains unapplied, per the note above.
 
 Each step that touches actual opmode/mode-field bit values (5, 6, 7, 9, 10) should cite its source
 (PRM section/page, or the specific `binutils`/`vasm` table entry cross-checked) in the PR description —
