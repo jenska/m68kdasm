@@ -5,6 +5,22 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.3.0] - 2026-09-14
+
+### Added
+- **FPU decoding.** `DecodeOptions.FPU` opts in to the 68881/68882 (or the 68040/68060's built-in) FPU instruction set: `FMOVE`/`FADD`/`FSUB`/`FMUL`/`FDIV`/`FCMP`/`FABS`/`FNEG`/`FSQRT`/`FTST`/`FNOP` in all 7 data formats (including packed BCD with k-factor), `FMOVEM` (both the `FPn` and `FPCR`/`FPSR`/`FPIAR` register-list forms), the full transcendental and math-extension function sets, `FMOVECR`, `FSINCOS`, the `FBcc`/`FDBcc`/`FScc`/`FTRAPcc` condition family, and `FSAVE`/`FRESTORE`.
+- **PMMU decoding.** `DecodeOptions.MMU` opts in to the 68851 (or the 68030's built-in) PMMU instruction set: `PMOVE`'s full register set (including `BAD0`-`BAD7`/`BAC0`-`BAC7`), `PMOVEFD`, `PFLUSHA`/`PFLUSH`/`PFLUSHS`/`PFLUSHR`, `PLOADR`/`PLOADW`, `PTESTR`/`PTESTW`, `PSAVE`/`PRESTORE`, the `PBcc`/`PDBcc`/`PScc`/`PTRAPcc` condition family, and the 68040's own simplified single-word PMMU forms.
+- **Auto-generated disassembly labels.** `DecodeOptions.Labels`/`LabelOptions` opt in to synthetic label generation (e.g. `l00001010`) for branch/call targets that fall within a disassembled range and land on a decoded instruction — created by `Bcc`/`BSR`/`DBcc`/`FBcc`/`FDBcc`/`PBcc`/`PDBcc` and by `JSR`/`JMP`/`PEA`/`LEA` targeting an absolute or PC-relative address, and rendered on every operand that references the address once created, not just the one that created it. A caller-supplied `Symbolizer` always takes precedence over a synthetic label. `Instruction.Label` and `Instruction.String()`'s label-line formatting expose the result.
+- `ELFDisassembler.DisassembleSectionWithOptions` and `DisassembleAllExecutableSectionsWithOptions`. Previously ELF-sourced disassembly had no `DecodeOptions` parameter at all and always decoded as plain `M68000` with no `Symbolizer` — CPU/FPU/MMU selection and the new `Labels` option are now reachable from ELF input too.
+
+### Fixed
+- **`Bcc`/`BSR`.W/.L and `DBcc` branch-target math.** The target was computed relative to (opcode address + total instruction length) instead of (opcode address + 2) — the address of the extension word — off by 2 bytes for the `.W` form and 4 for `.L`. The 8-bit (`.S`) form was accidentally correct, since for that form the two formulas happen to coincide, which is why no prior test caught this.
+
+### Changed
+- Bumped the `github.com/jenska/m68kasm` dependency to v1.5.0, which added FPU/PMMU/full-CPU-tier assembly support — used throughout as the verification oracle for everything above, round-tripping real assembled bytes rather than trusting bit-layout derivations alone.
+
+Not implemented (see [`docs/design-fpu-mmu.md`](docs/design-fpu-mmu.md) and [`docs/design-labels.md`](docs/design-labels.md) for rationale and the full delivery history): `PVALID`; per-CPU-tier gating for the wider PMMU surface (every PMMU pattern besides the 68040-specific forms currently decodes on any target CPU). `CAS2`, CPU32's `TBLS`/`TBLU` family, and 68040's `MOVE16`/`CINV`/`CPUSH` remain unimplemented from 1.2.0.
+
 ## [1.2.0] - 2026-09-12
 
 ### Added
