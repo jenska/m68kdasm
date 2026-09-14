@@ -117,6 +117,45 @@ func TestDecodeBranchInstructions(t *testing.T) {
 	}
 }
 
+// TestBranchWordLongFormTargetAddress guards against a regression in the
+// 16-bit/32-bit-displacement branch target formula: real 68k PC-relative
+// branches (Bcc, DBcc, and — see fpu_test.go — FBcc/FDBcc) always compute
+// the target relative to (opcode address + 2), the address of the first
+// extension word, never relative to the total instruction length. An
+// earlier version of decodeBxx/decodeDBcc used the total-bytes-consumed
+// offset instead, which happened to coincide with +2 for the 8-bit form
+// (already covered by TestDecodeBranchInstructions above) but decoded 2
+// bytes past the correct target for every .W/.L/DBcc case — undetected
+// because no existing test exercised those forms via the assembler.
+func TestBranchWordLongFormTargetAddress(t *testing.T) {
+	testCases := []struct {
+		source string
+		cpu    CPU
+	}{
+		{"BRA.W $0010", M68000},
+		{"BNE.W $0010", M68000},
+		{"BSR.L $00010000", M68020}, // 32-bit branch displacement is 68020+
+		{"DBEQ D0, $0010", M68000},
+	}
+	for _, tc := range testCases {
+		t.Run(tc.source, func(t *testing.T) {
+			data, err := m68kasm.AssembleStringWithOptions(tc.source, m68kasm.ParseOptions{
+				Target: m68kasm.Target{CPU: m68kasm.CPU68020},
+			})
+			if err != nil {
+				t.Fatalf("assembler error for %q: %v", tc.source, err)
+			}
+			inst, err := DecodeWithOptions(data, 0, DecodeOptions{CPU: tc.cpu})
+			if err != nil {
+				t.Fatalf("decode error for %q: %v", tc.source, err)
+			}
+			if got := inst.Assembly(); got != tc.source {
+				t.Errorf("mismatch\n want: %q\n  got: %q\nbytes: % X", tc.source, got, data)
+			}
+		})
+	}
+}
+
 func TestDecodeAbsoluteShortAddressing(t *testing.T) {
 	source := "MOVE.W $1234.W, D1"
 	bytes, err := m68kasm.AssembleString(source)
@@ -205,9 +244,16 @@ func TestDecodeRegressionRawOpcodes(t *testing.T) {
 			want: "BEQ.S $0004",
 		},
 		{
+			// Target is (address of the BSR opcode word) + 2 + the signed
+			// displacement (0xFEF0 = -272), i.e. 0 + 2 - 272 = -270 =
+			// 0xFFFFFEF2 — not +4. See branchTarget's doc comment
+			// (branch.go) and TestBranchWordLongFormTargetAddress: this
+			// case's previous expected value, $FFFFFEF4, was itself
+			// computed under decodeBxx's former (incorrect) "+4" formula,
+			// not cross-checked against a real assembler.
 			name: "BSR.W word branch",
 			data: []byte{0x61, 0x00, 0xFE, 0xF0},
-			want: "BSR.W $FFFFFEF4",
+			want: "BSR.W $FFFFFEF2",
 		},
 		{
 			name: "BRA.S mnemonic",

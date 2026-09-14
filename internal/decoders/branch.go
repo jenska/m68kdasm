@@ -18,6 +18,17 @@ var standardCondNames = [...]string{
 	"VC", "VS", "PL", "MI", "GE", "LT", "GT", "LE",
 }
 
+// branchTarget computes a PC-relative branch target: the displacement is
+// always relative to (address of the opcode word) + 2 — the address of the
+// extension word for the 16-bit-displacement form — regardless of how many
+// further extension words follow it (the 32-bit-displacement form's own
+// extra 2 bytes do NOT shift this reference point). Verified against
+// github.com/jenska/m68kasm's encoder (internal/asm/encode.go: `basePC :=
+// p.PC + 2`, used unconditionally for the .S/.W/.L forms alike).
+func branchTarget(address uint32, disp int32) uint32 {
+	return uint32(int32(address) + 2 + disp)
+}
+
 func decodeBxx(data []byte, opcode uint16, inst *Instruction, cpu CPU) error {
 	condition := (opcode >> 8) & 0x0F
 	mnemonic := "?"
@@ -48,7 +59,7 @@ func decodeBxx(data []byte, opcode uint16, inst *Instruction, cpu CPU) error {
 		suffix = "S"
 	}
 
-	target := uint32(int32(inst.Address) + int32(offset) + disp)
+	target := branchTarget(inst.Address, disp)
 	targetText := formatBranchTarget(target)
 	setInstruction(data, inst, offset, mnemonic+"."+suffix, targetText, branchOperand(targetText, target))
 	return nil
@@ -88,9 +99,7 @@ func decodeDBcc(data []byte, opcode uint16, inst *Instruction, cpu CPU) error {
 		return err
 	}
 	disp := int32(int16(binary.BigEndian.Uint16(data[2:4])))
-	// Matches decodeBxx's existing displacement-base convention for the
-	// 16-bit form (offset counted after consuming the displacement word).
-	target := uint32(int32(inst.Address) + 4 + disp)
+	target := branchTarget(inst.Address, disp)
 	targetText := formatBranchTarget(target)
 	regText := fmt.Sprintf("D%d", reg)
 	setInstruction(data, inst, 4, mnemonic, fmt.Sprintf("%s, %s", regText, targetText), registerOperand(RegisterKindData, reg), branchOperand(targetText, target))
