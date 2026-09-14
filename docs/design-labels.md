@@ -2,9 +2,10 @@
 
 ## Status
 
-**Proposed.** Not started. This is a new, independent feature — it does not follow on from
-[design-cpu-variants.md](design-cpu-variants.md) or [design-fpu-mmu.md](design-fpu-mmu.md) and has no
-dependency on either being finished (both happen to be done as of this writing, but nothing here
+**In progress.** Delivery-sequence step 1 (the ELF options-plumbing prerequisite) is done; the labels
+feature itself (steps 2-5) has not started. This is a new, independent feature — it does not follow on
+from [design-cpu-variants.md](design-cpu-variants.md) or [design-fpu-mmu.md](design-fpu-mmu.md) and has
+no dependency on either being finished (both happen to be done as of this writing, but nothing here
 requires that).
 
 ## Current state
@@ -57,11 +58,11 @@ requires that).
     mirrors only the *first* branch operand a decoder happened to populate — convenient for callers who
     just want "the" target of a simple branch, but lossy, so a label-collecting pass must walk
     `Metadata.Operands` directly rather than relying on this shortcut.
-- [`ELFDisassembler.DisassembleSection`](../elf.go#L41) takes no `DecodeOptions` at all — it calls the
-  no-options `DisassembleRange` directly ([elf.go:111](../elf.go#L111)). This predates labels and already
-  means `CPU`/`FPU`/`MMU` selection is unreachable when disassembling ELF input; it also means labels
-  would be unreachable there too, unless this gap is closed alongside (or just ahead of) this feature —
-  see "The ELF gap this depends on" below.
+- ~~`ELFDisassembler.DisassembleSection` takes no `DecodeOptions` at all~~ — **fixed** as delivery-sequence
+  step 1: `DisassembleSectionWithOptions`/`DisassembleAllExecutableSectionsWithOptions` now exist (see
+  "The ELF gap this depends on" below). This was a real, pre-existing gap independent of labels — it
+  predated this doc and already meant `CPU`/`FPU`/`MMU` selection was unreachable on ELF input — closed
+  first so the rest of this feature has somewhere to reach ELF callers from.
 
 ## Goals
 
@@ -259,22 +260,24 @@ func (i Instruction) String() string {
 }
 ```
 
-### The ELF gap this depends on
+### The ELF gap this depended on — closed
 
-`ELFDisassembler.DisassembleSection` ([elf.go:41](../elf.go#L41)) has no `DecodeOptions` parameter at
-all — it calls the no-options `DisassembleRange` ([elf.go:111](../elf.go#L111)). This predates labels
-and already blocks `CPU`/`FPU`/`MMU` selection on ELF input; it also means labels would be unreachable
-from ELF unless this is closed alongside. Proposed as a small prerequisite, not really part of "labels"
-as a feature: add
+`ELFDisassembler.DisassembleSection` ([elf.go:41](../elf.go#L41)) had no `DecodeOptions` parameter at
+all — it called the no-options `DisassembleRange` ([elf.go:111](../elf.go#L111)). This predated labels
+and already blocked `CPU`/`FPU`/`MMU` selection on ELF input; it also would have meant labels were
+unreachable from ELF. Closed as delivery-sequence step 1:
 
 ```go
 func (ed *ELFDisassembler) DisassembleSectionWithOptions(sectionName string, opts DecodeOptions) ([]Instruction, error)
+func (ed *ELFDisassembler) DisassembleAllExecutableSectionsWithOptions(opts DecodeOptions) (map[string][]Instruction, error)
 ```
 
 mirroring the `Xxx`/`XxxWithOptions` pairing already used everywhere else in this package
 (`Decode`/`DecodeWithOptions`, `DisassembleRange`/`DisassembleRangeWithOptions`, etc.), with the existing
-no-options `DisassembleSection` becoming a thin wrapper calling it with `DecodeOptions{}` — the same
-relationship `Decode` already has to `DecodeWithOptions`.
+no-options `DisassembleSection`/`DisassembleAllExecutableSections` becoming thin wrappers calling them
+with `DecodeOptions{}` — the same relationship `Decode` already has to `DecodeWithOptions`. The shared
+internal `disassembleSection` helper both public methods call now threads `opts` through to
+`DisassembleRangeWithOptions` instead of hardcoding `DisassembleRange`.
 
 ## Migration / call-site impact
 
@@ -286,17 +289,23 @@ Additive only, no breaking changes:
 - `formatOperand`/`formatOperands` gain the composite-`Symbolizer` indirection internally; both are
   unexported, and a nil-`Labels` composite degenerates to exactly today's single-`Symbolizer` path, so
   existing `Symbolizer`-only callers see no behavior change.
-- `ELFDisassembler` gains one new method; `DisassembleSection`'s existing signature and behavior are
+- `ELFDisassembler` gained two new methods (step 1, already landed);
+  `DisassembleSection`/`DisassembleAllExecutableSections`' existing signatures and behavior are
   unchanged.
 
 Every existing test should pass unmodified; nothing here touches `internal/decoders`.
 
 ## Suggested delivery sequence
 
-1. **ELF options-plumbing PR** (prerequisite, independently useful even without labels): add
-   `DisassembleSectionWithOptions`, wire the existing `DisassembleSection` to call it with
-   `DecodeOptions{}`. Small and mechanical — landing it first keeps the "labels" PR from being blamed for
-   an unrelated, pre-existing gap it merely exposed.
+1. ~~**ELF options-plumbing PR**~~ — done: added `DisassembleSectionWithOptions` and
+   `DisassembleAllExecutableSectionsWithOptions`, both mirroring the `Xxx`/`XxxWithOptions` pairing used
+   everywhere else in this package; the existing no-options methods now call them with `DecodeOptions{}`.
+   `disassembleSection` (the shared internal helper both call) threads `opts` through to
+   `DisassembleRangeWithOptions` instead of hardcoding `DisassembleRange`. Verified with a real FPU
+   opcode assembled into an ELF section (`TestELFDisassembleSectionWithOptions`,
+   `example_elf_test.go`): unrecognized (`DC.W`) via the old no-options method, correctly decoded via
+   the new `WithOptions` ones — confirming `DecodeOptions` genuinely reaches ELF-sourced disassembly now,
+   not just that the new methods compile.
 2. **Plumbing PR**: `LabelOptions`, `DecodeOptions.Labels`, `Instruction.Label`, and the pass-2 skeleton
    in `DisassembleRangeWithOptions`, wired up but collecting only `OperandKindBranchTarget` candidates
    (`Bcc`/`BSR`/`DBcc`/`FBcc`/`FDBcc`/`PBcc`/`PDBcc`) — the zero-mnemonic-matching case, so this PR

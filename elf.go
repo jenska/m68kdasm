@@ -39,11 +39,20 @@ func (ed *ELFDisassembler) Close() error {
 // DisassembleSection disassembles a named ELF section by name (e.g., ".text")
 // Returns instructions with addresses from the section's VA (virtual address)
 func (ed *ELFDisassembler) DisassembleSection(sectionName string) ([]Instruction, error) {
+	return ed.DisassembleSectionWithOptions(sectionName, DecodeOptions{})
+}
+
+// DisassembleSectionWithOptions is DisassembleSection with explicit
+// DecodeOptions (CPU/FPU/MMU selection, a Symbolizer, etc.) — the same
+// Xxx/XxxWithOptions pairing every other entry point in this package uses.
+// Without this, DecodeOptions had no way to reach ELF-sourced disassembly
+// at all; DisassembleSection always decoded as plain M68000.
+func (ed *ELFDisassembler) DisassembleSectionWithOptions(sectionName string, opts DecodeOptions) ([]Instruction, error) {
 	section := ed.file.Section(sectionName)
 	if section == nil {
 		return nil, fmt.Errorf("section %q not found in ELF file", sectionName)
 	}
-	return ed.disassembleSection(section)
+	return ed.disassembleSection(section, opts)
 }
 
 // ListSections returns information about all loadable sections in the ELF file.
@@ -82,6 +91,12 @@ type SectionInfo struct {
 // DisassembleAllExecutableSections disassembles all executable sections (SHF_EXECINSTR flag)
 // Returns a map of section name → instructions
 func (ed *ELFDisassembler) DisassembleAllExecutableSections() (map[string][]Instruction, error) {
+	return ed.DisassembleAllExecutableSectionsWithOptions(DecodeOptions{})
+}
+
+// DisassembleAllExecutableSectionsWithOptions is DisassembleAllExecutableSections
+// with explicit DecodeOptions — see DisassembleSectionWithOptions.
+func (ed *ELFDisassembler) DisassembleAllExecutableSectionsWithOptions(opts DecodeOptions) (map[string][]Instruction, error) {
 	result := make(map[string][]Instruction)
 
 	for _, section := range ed.file.Sections {
@@ -90,7 +105,7 @@ func (ed *ELFDisassembler) DisassembleAllExecutableSections() (map[string][]Inst
 			continue
 		}
 
-		instrs, err := ed.disassembleSection(section)
+		instrs, err := ed.disassembleSection(section, opts)
 		if err != nil {
 			return nil, fmt.Errorf("failed to disassemble section %q: %w", section.Name, err)
 		}
@@ -101,12 +116,12 @@ func (ed *ELFDisassembler) DisassembleAllExecutableSections() (map[string][]Inst
 	return result, nil
 }
 
-func (ed *ELFDisassembler) disassembleSection(section *elf.Section) ([]Instruction, error) {
+func (ed *ELFDisassembler) disassembleSection(section *elf.Section, opts DecodeOptions) ([]Instruction, error) {
 	data, err := section.Data()
 	if err != nil {
 		return nil, fmt.Errorf("failed to read section %q: %w", section.Name, err)
 	}
 
 	// Use the section's virtual address as the starting address.
-	return DisassembleRange(data, uint32(section.Addr))
+	return DisassembleRangeWithOptions(data, uint32(section.Addr), opts)
 }

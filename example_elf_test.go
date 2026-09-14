@@ -194,6 +194,75 @@ func TestELFDisassemblesAllExecutableSections(t *testing.T) {
 	}
 }
 
+// TestELFDisassembleSectionWithOptions confirms DecodeOptions actually
+// reaches ELF-sourced disassembly. Before DisassembleSectionWithOptions
+// existed, DisassembleSection always decoded as plain M68000 with no way
+// to opt in to FPU (or any other DecodeOptions field) — an FPU opcode in
+// an ELF .text section would have rendered as DC.W no matter what the
+// caller wanted.
+func TestELFDisassembleSectionWithOptions(t *testing.T) {
+	source := `
+		ORG $1000
+		.text
+		start:
+			FADD.X FP1, FP0
+			RTS
+	`
+
+	elfData, err := m68kasm.AssembleStringELFWithOptions(source, m68kasm.ParseOptions{
+		Target: m68kasm.Target{CPU: m68kasm.CPU68020, Features: m68kasm.FeatFPU},
+	})
+	if err != nil {
+		t.Fatalf("Failed to assemble to ELF: %v", err)
+	}
+
+	tmpDir := t.TempDir()
+	elfPath := filepath.Join(tmpDir, "fpu.elf")
+	if err := os.WriteFile(elfPath, elfData, 0644); err != nil {
+		t.Fatalf("Failed to write ELF file: %v", err)
+	}
+
+	elf, err := OpenELF(elfPath)
+	if err != nil {
+		t.Fatalf("Failed to open ELF file: %v", err)
+	}
+	defer elf.Close()
+
+	// Without FPU: true, the FADD opcode isn't recognized and falls
+	// through to DC.W — same default-preserving behavior as everywhere
+	// else in this package.
+	withoutFPU, err := elf.DisassembleSection(".text")
+	if err != nil {
+		t.Fatalf("DisassembleSection: %v", err)
+	}
+	if len(withoutFPU) == 0 || withoutFPU[0].Mnemonic != "DC.W" {
+		t.Fatalf("expected FADD to be unrecognized without FPU: true, got %+v", withoutFPU)
+	}
+
+	withFPU, err := elf.DisassembleSectionWithOptions(".text", DecodeOptions{CPU: M68020, FPU: true})
+	if err != nil {
+		t.Fatalf("DisassembleSectionWithOptions: %v", err)
+	}
+	wantAssembly := []string{"FADD.X FP1, FP0", "RTS"}
+	if len(withFPU) != len(wantAssembly) {
+		t.Fatalf("expected %d instructions, got %d: %+v", len(wantAssembly), len(withFPU), withFPU)
+	}
+	for i, want := range wantAssembly {
+		if got := withFPU[i].Assembly(); got != want {
+			t.Errorf("instruction %d: want %q, got %q", i, want, got)
+		}
+	}
+
+	allExec, err := elf.DisassembleAllExecutableSectionsWithOptions(DecodeOptions{CPU: M68020, FPU: true})
+	if err != nil {
+		t.Fatalf("DisassembleAllExecutableSectionsWithOptions: %v", err)
+	}
+	instrs, ok := allExec[".text"]
+	if !ok || len(instrs) != len(wantAssembly) || instrs[0].Assembly() != wantAssembly[0] {
+		t.Fatalf("DisassembleAllExecutableSectionsWithOptions: expected FPU-decoded .text, got %+v", allExec)
+	}
+}
+
 func mapsKeys(m map[string][]Instruction) []string {
 	keys := make([]string, 0, len(m))
 	for k := range m {
