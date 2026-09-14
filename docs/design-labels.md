@@ -2,14 +2,14 @@
 
 ## Status
 
-**In progress.** Steps 1-4 are done: the ELF options-plumbing prerequisite,
+**Implemented.** All 5 delivery-sequence steps are done: the ELF options-plumbing prerequisite,
 `LabelOptions`/`DecodeOptions.Labels`/`Instruction.Label`, the full two-pass `applyLabels`
 implementation for the `Bcc`/`BSR`/`DBcc`/`FBcc`/`FDBcc`/`PBcc`/`PDBcc` branch family plus
-`JSR`/`JMP`/`PEA`/`LEA` classification, and universal rendering (which needed no dedicated work at all
-— see step 2's note below). Only step 5 (`String()` formatting) remains. This is a new, independent
-feature — it does not follow on from [design-cpu-variants.md](design-cpu-variants.md) or
-[design-fpu-mmu.md](design-fpu-mmu.md) and has no dependency on either being finished (both happen to be
-done as of this writing, but nothing here requires that).
+`JSR`/`JMP`/`PEA`/`LEA` classification, universal rendering (which needed no dedicated work at all — see
+step 2's note below), and `String()`'s label-line formatting. This was a new, independent feature — it
+did not follow on from [design-cpu-variants.md](design-cpu-variants.md) or
+[design-fpu-mmu.md](design-fpu-mmu.md) and had no dependency on either being finished (both happened to
+be done at the time, but nothing here required that).
 
 ## Current state
 
@@ -339,8 +339,11 @@ Every existing test should pass unmodified; nothing here touches `internal/decod
    accepted trade-off actually behaves as decided, not just as described.
 4. ~~**Universal-rendering PR**~~ — see step 2's note: this fell out of the pass-2 implementation for
    free and needs no dedicated work.
-5. **`String()`/formatting PR**: decide and land the exact label-line rendering convention, informed by
-   how step 2-4's output actually reads in practice.
+5. ~~**`String()`/formatting PR`**~~ — done: landed exactly the convention this doc's API-shape section
+   proposed (`"%s:\n%08X: %s"` — the label on its own line, ahead of the usual `address: assembly`
+   line), unchanged after seeing steps 2-4's actual output. An unlabeled instruction's `String()` is
+   byte-for-byte identical to its pre-labels rendering — verified directly
+   (`TestInstructionStringWithoutLabelsUnchanged`), not just assumed from the `if i.Label != ""` guard.
 
 Each step is independently mergeable and testable; nothing later depends on a choice made in an earlier
 step beyond what is already fixed by this document.

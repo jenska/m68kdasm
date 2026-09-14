@@ -40,7 +40,14 @@ func (i Instruction) Assembly() string {
 }
 
 // String liefert eine lesbare Repräsentation der Instruktion (z.B. für CLI-Output).
+// When Label is set (see DecodeOptions.Labels, docs/design-labels.md), a
+// "name:" line precedes the address/assembly line, matching how a real
+// assembly listing shows a label definition on its own line above the
+// instruction it names.
 func (i Instruction) String() string {
+	if i.Label != "" {
+		return fmt.Sprintf("%s:\n%08X: %s", i.Label, i.Address, i.Assembly())
+	}
 	return fmt.Sprintf("%08X: %s", i.Address, i.Assembly())
 }
 

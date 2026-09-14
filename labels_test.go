@@ -351,3 +351,48 @@ func TestLabelsNoOpOnSingleDecode(t *testing.T) {
 		t.Errorf("expected no label from single-instruction decode, got %q", inst.Label)
 	}
 }
+
+// TestInstructionStringWithLabel covers step 5 of docs/design-labels.md:
+// String()'s label-line rendering convention. A labeled instruction gets a
+// "name:" line before the usual "address: assembly" line, matching how a
+// real assembly listing shows a label definition on its own line; an
+// unlabeled instruction's String() is completely unchanged.
+func TestInstructionStringWithLabel(t *testing.T) {
+	data := []byte{
+		0x60, 0x02, // BRA.S $1004 (0x1000)
+		0x4E, 0x71, // NOP         (0x1002)
+		0x4E, 0x75, // RTS         (0x1004)
+	}
+
+	instrs, err := DisassembleRangeWithOptions(data, 0x1000, DecodeOptions{Labels: &LabelOptions{}})
+	if err != nil {
+		t.Fatalf("DisassembleRangeWithOptions: %v", err)
+	}
+
+	want := "l00001004:\n00001004: RTS"
+	if got := instrs[2].String(); got != want {
+		t.Errorf("labeled instruction String() mismatch:\n want: %q\n  got: %q", want, got)
+	}
+
+	// An instruction with no label renders exactly as before this
+	// feature existed — no blank label line, no behavior change.
+	wantUnlabeled := "00001002: NOP"
+	if got := instrs[1].String(); got != wantUnlabeled {
+		t.Errorf("unlabeled instruction String() mismatch:\n want: %q\n  got: %q", wantUnlabeled, got)
+	}
+}
+
+// TestInstructionStringWithoutLabelsUnchanged confirms String() is
+// byte-for-byte identical to its pre-labels behavior when DecodeOptions.Labels
+// is unset — Label is always "", so the new branch in String() never fires.
+func TestInstructionStringWithoutLabelsUnchanged(t *testing.T) {
+	data := []byte{0x4E, 0x75} // RTS
+	inst, err := Decode(data, 0x2000)
+	if err != nil {
+		t.Fatalf("Decode: %v", err)
+	}
+	want := "00002000: RTS"
+	if got := inst.String(); got != want {
+		t.Errorf("String() mismatch:\n want: %q\n  got: %q", want, got)
+	}
+}
