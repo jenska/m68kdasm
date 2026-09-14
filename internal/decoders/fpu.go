@@ -96,11 +96,152 @@ var fpGeneralOps = map[uint16]fpOpInfo{
 	0x3A: {"FTST", false, false},
 }
 
-func decodeFNOP(data []byte, opcode uint16, inst *Instruction, cpu CPU) error {
-	if err := requireLength(data, 4, "FNOP"); err != nil {
+// fpConditions names the FPU's 32 condition codes, indexed by condition
+// value (0-31) — a distinct, wider space from the integer ISA's 16
+// (branchCondNames/standardCondNames in branch.go). One table serves all
+// four condition-driven FPU families (FBcc/FDBcc/FScc/FTRAPcc): each
+// mnemonic is this suffix prefixed with the family's own letter(s).
+// Copied verbatim from m68kasm's fpConditions (cpu020_fpu_cond.go), itself
+// decoded from GAS's m68k opcode table.
+var fpConditions = [...]string{
+	"F", "EQ", "OGT", "OGE", "OLT", "OLE", "OGL", "OR",
+	"UN", "UEQ", "UGT", "UGE", "ULT", "ULE", "NE", "T",
+	"SF", "SEQ", "GT", "GE", "LT", "LE", "GL", "GLE",
+	"NGLE", "NGL", "NLE", "NLT", "NGE", "NGT", "SNE", "ST",
+}
+
+func fpConditionName(cc uint16) string {
+	if int(cc) < len(fpConditions) {
+		return fpConditions[cc]
+	}
+	return fmt.Sprintf("?%d", cc)
+}
+
+// decodeFBcc decodes both FBcc forms — word displacement (word1 =
+// 0xF280|cc) and long displacement (word1 = 0xF2C0|cc, distinguished from
+// the word form by bit 6, the one bit that differs between the two base
+// literals) — using branchTarget (branch.go) for the target address, same
+// as every other PC-relative branch family.
+//
+// FBcc never inlines an 8-bit displacement in the opcode itself (unlike
+// integer Bcc) — every form needs a full extension word — so cc==0
+// ("F", branch never) with a zero word displacement is bit-for-bit
+// identical to what real hardware and every 68k assembler spell "FNOP",
+// and is rendered that way here rather than as "FBF.W $addr".
+func decodeFBcc(data []byte, opcode uint16, inst *Instruction, cpu CPU) error {
+	cc := opcode & 0x1F
+	mnemonic := "FB" + fpConditionName(cc)
+	long := opcode&0x0040 != 0
+
+	if long {
+		if err := requireLength(data, 6, mnemonic+".L displacement"); err != nil {
+			return err
+		}
+		disp := int32(binary.BigEndian.Uint32(data[2:6]))
+		target := branchTarget(inst.Address, disp)
+		targetText := formatBranchTarget(target)
+		setInstruction(data, inst, 6, mnemonic+".L", targetText, branchOperand(targetText, target))
+		return nil
+	}
+
+	if err := requireLength(data, 4, mnemonic+".W displacement"); err != nil {
 		return err
 	}
-	setInstruction(data, inst, 4, "FNOP", "")
+	disp := int32(int16(binary.BigEndian.Uint16(data[2:4])))
+	if cc == 0 && disp == 0 {
+		setInstruction(data, inst, 4, "FNOP", "")
+		return nil
+	}
+	target := branchTarget(inst.Address, disp)
+	targetText := formatBranchTarget(target)
+	setInstruction(data, inst, 4, mnemonic+".W", targetText, branchOperand(targetText, target))
+	return nil
+}
+
+// decodeFDBcc mirrors decodeDBcc (branch.go), except the condition lives in
+// a dedicated, fully-fixed word2 (0x0000-0x001F) rather than in the opcode
+// word's own bits — word1 only carries the Dn register (bits 2-0).
+func decodeFDBcc(data []byte, opcode uint16, inst *Instruction, cpu CPU) error {
+	if err := requireLength(data, 6, "FDBcc"); err != nil {
+		return err
+	}
+	word2 := binary.BigEndian.Uint16(data[2:4])
+	cc := word2 & 0x1F
+	mnemonic := "FDB" + fpConditionName(cc)
+	reg := uint8(opcode & 0x7)
+	disp := int32(int16(binary.BigEndian.Uint16(data[4:6])))
+	target := branchTarget(inst.Address, disp)
+	targetText := formatBranchTarget(target)
+	regMeta := registerOperand(RegisterKindData, reg)
+	setInstruction(data, inst, 6, mnemonic, regMeta.Text+", "+targetText, regMeta, branchOperand(targetText, target))
+	return nil
+}
+
+// decodeFScc mirrors decodeScc (branch.go): word1 = 0xF240|<ea> (data-
+// alterable, byte-sized destination), word2 = the condition, fully fixed
+// like FDBcc's. FDBcc and FTRAPcc's exact opcodes both occupy part of this
+// pattern's own EA range (address-register-direct and mode-7/reg-2..4
+// respectively) and so must precede this pattern in the opcode table — see
+// their registrations in opcodetable.go, mirroring integer DBcc/TRAPcc's
+// identical precedence requirement ahead of Scc.
+func decodeFScc(data []byte, opcode uint16, inst *Instruction, cpu CPU) error {
+	if err := requireLength(data, 4, "FScc"); err != nil {
+		return err
+	}
+	word2 := binary.BigEndian.Uint16(data[2:4])
+	cc := word2 & 0x1F
+	mnemonic := "FS" + fpConditionName(cc)
+	mode := uint8((opcode >> 3) & 0x7)
+	reg := uint8(opcode & 0x7)
+	operand, offset, meta, err := decodeEAWithSize(data, inst.Address, 4, mode, reg, 1, cpu)
+	if err != nil {
+		return err
+	}
+	setInstruction(data, inst, offset, mnemonic, operand, meta)
+	return nil
+}
+
+// decodeFTRAPccBare/Word/Long mirror decodeTRAPcc's three-form shape
+// (branch.go), but each form is a fully-fixed word1 literal (0xF27C/0xF27A/
+// 0xF27B) rather than a shared mask with the operand selector in the
+// opcode's low bits — the condition lives in word2, like FDBcc/FScc.
+func decodeFTRAPccBare(data []byte, opcode uint16, inst *Instruction, cpu CPU) error {
+	return decodeFTRAPcc(data, inst, 0)
+}
+
+func decodeFTRAPccWord(data []byte, opcode uint16, inst *Instruction, cpu CPU) error {
+	return decodeFTRAPcc(data, inst, 2)
+}
+
+func decodeFTRAPccLong(data []byte, opcode uint16, inst *Instruction, cpu CPU) error {
+	return decodeFTRAPcc(data, inst, 4)
+}
+
+func decodeFTRAPcc(data []byte, inst *Instruction, immSize int) error {
+	if err := requireLength(data, 4, "FTRAPcc"); err != nil {
+		return err
+	}
+	word2 := binary.BigEndian.Uint16(data[2:4])
+	mnemonic := "FTRAP" + fpConditionName(word2&0x1F)
+
+	switch immSize {
+	case 0:
+		setInstruction(data, inst, 4, mnemonic, "")
+	case 2:
+		if err := requireLength(data, 6, mnemonic+".W operand"); err != nil {
+			return err
+		}
+		imm := uint32(binary.BigEndian.Uint16(data[4:6]))
+		immText := fmt.Sprintf("#%s", formatImmediate(imm, 2))
+		setInstruction(data, inst, 6, mnemonic+".W", immText, immediateOperand(immText, imm, 2))
+	case 4:
+		if err := requireLength(data, 8, mnemonic+".L operand"); err != nil {
+			return err
+		}
+		imm := binary.BigEndian.Uint32(data[4:8])
+		immText := fmt.Sprintf("#%s", formatImmediate(imm, 4))
+		setInstruction(data, inst, 8, mnemonic+".L", immText, immediateOperand(immText, imm, 4))
+	}
 	return nil
 }
 

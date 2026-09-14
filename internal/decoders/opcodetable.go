@@ -25,6 +25,7 @@ const (
 	maskF0C0 = 0xF0C0
 	maskF0F8 = 0xF0F8
 	maskF138 = 0xF138
+	maskFFE0 = 0xFFE0 // FBcc: 5-bit condition field in bits 4-0
 )
 
 // exact opcode values
@@ -166,10 +167,17 @@ const (
 	// bit-layout derivation, cross-checked against github.com/jenska/
 	// m68kasm's verified encoder rather than recalled from memory.
 	valFPGeneric = 0xF200
-	// valFNOP is FPU no-op: mode field 010 (vs. valFPGeneric's 000), fully
-	// fixed, always followed by a zero extension word — not part of the
-	// valFPGeneric family despite the superficially similar 0xF2xx shape.
-	valFNOP = 0xF280
+
+	// FPU conditional branch/set/trap family (a distinct 32-condition
+	// space from the integer ISA's 16) — see fpu.go's decodeFBcc/
+	// decodeFDBcc/decodeFScc/decodeFTRAPcc for the bit layout.
+	valFBccW      = 0xF280 // word displacement; cc==0 && disp==0 renders as FNOP
+	valFBccL      = 0xF2C0 // long displacement
+	valFDBcc      = 0xF248 // occupies FScc's address-register-direct EA slot
+	valFScc       = 0xF240
+	valFTRAPccW   = 0xF27A // occupies FScc's mode-7/reg-2 EA slot
+	valFTRAPccL   = 0xF27B // occupies FScc's mode-7/reg-3 EA slot
+	valFTRAPccNil = 0xF27C // occupies FScc's mode-7/reg-4 EA slot
 
 	valBFTST  = 0xE0C0
 	valBFEXTU = 0xE1C0
@@ -374,13 +382,18 @@ var opcodeBuckets = [16][]OpcodePattern{
 		masked(maskF000, valSHIFT, decodeShiftRotate), // All ASL/ASR/LSL/LSR/ROL/ROR/ROXL/ROXR
 	},
 	0xF: {
-		// valFNOP must precede valFPGeneric: both are OpcodePattern matches
-		// keyed on the top 10 bits, but FNOP's exact pattern (maskFFFF) is
-		// strictly narrower than valFPGeneric's maskFFC0 and the two never
-		// actually overlap (mode field 010 vs 000 — see the constants'
-		// comments), so this ordering is documentation, not a correctness
-		// requirement, unlike most other "must precede" notes in this file.
-		fpuExact(valFNOP, decodeFNOP),
+		// valFDBcc and the three valFTRAPcc literals must precede valFScc:
+		// each occupies a specific EA sub-slot (address-register-direct for
+		// FDBcc; mode-7/reg-2,3,4 for FTRAPcc) that valFScc's own mask would
+		// otherwise also match — the exact same precedence shape integer
+		// DBcc/TRAPcc already require ahead of Scc (bucket 0x5 above).
+		fpuMasked(maskFFF8, valFDBcc, decodeFDBcc),
+		fpuExact(valFTRAPccNil, decodeFTRAPccBare),
+		fpuExact(valFTRAPccW, decodeFTRAPccWord),
+		fpuExact(valFTRAPccL, decodeFTRAPccLong),
+		fpuMasked(maskFFC0, valFScc, decodeFScc),
+		fpuMasked(maskFFE0, valFBccW, decodeFBcc),
+		fpuMasked(maskFFE0, valFBccL, decodeFBcc),
 		fpuMasked(maskFFC0, valFPGeneric, decodeFPGeneric),
 	},
 }

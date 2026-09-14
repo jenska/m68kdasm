@@ -92,6 +92,51 @@ func TestFPUGenericRoundTrip(t *testing.T) {
 	}
 }
 
+// TestFPUCondBranchRoundTrip covers the FPU's conditional branch/set/trap
+// family (FBcc/FDBcc/FScc/FTRAPcc), a distinct 32-condition space from the
+// integer ISA's 16 — see internal/decoders/fpu.go's decodeFBcc and friends.
+func TestFPUCondBranchRoundTrip(t *testing.T) {
+	testCases := []string{
+		"FBEQ.W $0010",
+		"FBNE.L $00010000",
+		"FBT.W $0004",
+		"FBF.W $0004", // cc=0 with a nonzero displacement must NOT collapse into FNOP
+		"FNOP",        // cc=0 with a zero displacement is the FNOP special case
+
+		"FDBEQ D0, $0010",
+		"FDBNE D3, $0020",
+
+		"FSGT D0",
+		"FSLT (A0)",
+		"FSEQ (A0)+",
+		"FSNE -(A0)",
+
+		"FTRAPEQ",
+		"FTRAPNE.W #$04D2",
+		"FTRAPGT.L #$0001E240",
+	}
+
+	for _, source := range testCases {
+		t.Run(source, func(t *testing.T) {
+			data, err := m68kasm.AssembleStringWithOptions(source, fpuTarget)
+			if err != nil {
+				t.Fatalf("assembler error for %q: %v", source, err)
+			}
+
+			inst, err := DecodeWithOptions(data, 0, DecodeOptions{CPU: M68020, FPU: true})
+			if err != nil {
+				t.Fatalf("decode error for %q (bytes % X): %v", source, data, err)
+			}
+			if int(inst.Size) != len(data) {
+				t.Errorf("%q: decoded size %d, assembled %d bytes (% X)", source, inst.Size, len(data), data)
+			}
+			if got := inst.Assembly(); got != source {
+				t.Errorf("mismatch\n want: %q\n  got: %q\nbytes: % X", source, got, data)
+			}
+		})
+	}
+}
+
 // TestFPUFloatImmediateRoundTrip checks the Single/Double/Extended
 // floating-point immediate literal path specifically, since it does its
 // own IEEE-754/extended-precision decoding (decodeFPFloatImmediate in
