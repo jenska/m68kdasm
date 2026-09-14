@@ -5,9 +5,9 @@
 **FPU: implemented** (delivery-sequence steps 1-8.5 below — the entire 68881/68882/68040/68060 FPU
 instruction set this doc scoped in, all 7 data formats, both directions). **PMMU: in progress**
 (`PMOVE` — its entire register set, including `BAD`/`BAC` — `PMOVEFD`, `PFLUSHA`, `PFLUSH`, `PFLUSHS`,
-`PFLUSHR`, `PLOADR`, `PLOADW`, `PTESTR`, `PTESTW` all done; `PSAVE`/`PRESTORE`, 68040's own PMMU forms,
-and the `Pcc` condition family — step 10 — remain). This was originally the "Step 8" follow-up flagged
-as future work in
+`PFLUSHR`, `PLOADR`, `PLOADW`, `PTESTR`, `PTESTW`, `PSAVE`, `PRESTORE` all done; only the 68040's own
+PMMU forms and the `Pcc` condition family — step 10 — remain). This was originally the "Step 8"
+follow-up flagged as future work in
 [design-cpu-variants.md](design-cpu-variants.md), whose Non-goals section explicitly scoped FPU and
 PMMU decoding out: "a large, separate opcode space (cpGEN, F-line `1111`) and should be its own
 follow-up design once base-CPU gating exists." Base-CPU gating (the `CPU`/`cpuSet` machinery) existed
@@ -353,9 +353,12 @@ code is verified against the datasheet.
    `cpu030_pmmu_badbac.go` bit math by hand before coding, given the inverted-bit convention is exactly
    the kind of easy-to-transpose detail that bit past bugs in this sequence — all 6 test cases passed
    round-trip on the first try, confirming the hand derivation held up. This completes `PMOVE`'s entire
-   register set. Not yet done, each its own remaining sub-step:
-   - `PSAVE`/`PRESTORE` — structurally identical to `FSAVE`/`FRESTORE` (single-word, no coprocessor
-     command word2, `-(An)`-only/`(An)+`-only), should be a quick follow-up once reached.
+   register set. ~~`PSAVE`/`PRESTORE`~~ — also done, exactly as quick as predicted: structurally
+   identical to `FSAVE`/`FRESTORE` (single-word, no coprocessor command word2, `-(An)`-only/
+   `(An)+`-only — `decodePSAVE`/`decodePRESTORE` in `pmmu.go`), the one difference being PMMU's word1
+   literals (`0xF100`/`0xF140`) are used exactly as GAS's own table lists them, with no
+   `fpuWord1Base`-style coprocessor-ID adjustment (PMMU's word1 never carries one). All 4 test cases
+   passed round-trip on the first try. Not yet done, each its own remaining sub-step:
    - The 68040's own single-word `PFLUSHA`/`PFLUSHAN`/`PFLUSHN`/`PFLUSH`/`PTESTR`/`PTESTW` forms
      (`cpu040_pmmu.go` in m68kasm) — a simplified, re-encoded interface distinct from 68030/68851's
      two-word coprocessor forms.

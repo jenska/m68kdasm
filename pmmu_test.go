@@ -156,6 +156,37 @@ func TestBADBACRoundTrip(t *testing.T) {
 	}
 }
 
+// TestPSAVERestoreRoundTrip covers PSAVE/PRESTORE's instruction shell
+// (mnemonic + <ea>) — see decodePSAVE/decodePRESTORE in
+// internal/decoders/pmmu.go. Frame contents are out of scope (see
+// docs/design-fpu-mmu.md's Non-goals).
+func TestPSAVERestoreRoundTrip(t *testing.T) {
+	testCases := []string{
+		"PSAVE (A0)",
+		"PSAVE -(A0)",
+		"PRESTORE (A0)",
+		"PRESTORE (A0)+",
+	}
+	for _, source := range testCases {
+		t.Run(source, func(t *testing.T) {
+			data, err := m68kasm.AssembleStringWithOptions(source, pmmuTarget)
+			if err != nil {
+				t.Fatalf("assembler error for %q: %v", source, err)
+			}
+			inst, err := DecodeWithOptions(data, 0, DecodeOptions{CPU: M68020, MMU: true})
+			if err != nil {
+				t.Fatalf("decode error for %q (bytes % X): %v", source, data, err)
+			}
+			if int(inst.Size) != len(data) {
+				t.Errorf("%q: decoded size %d, assembled %d bytes (% X)", source, inst.Size, len(data), data)
+			}
+			if got := inst.Assembly(); got != source {
+				t.Errorf("mismatch\n want: %q\n  got: %q\nbytes: % X", source, got, data)
+			}
+		})
+	}
+}
+
 // TestPMMUWithoutOptIn confirms PMMU F-line opcodes still fall through to
 // the unknown-opcode DC.W path when the caller does not opt in via
 // DecodeOptions.MMU, preserving today's behavior by default.

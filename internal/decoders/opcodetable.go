@@ -167,6 +167,14 @@ const (
 	// 0), unlike the FPU family just below (CpId 1, 0xF200).
 	valPMOVE = 0xF000
 
+	// PSAVE/PRESTORE: single-word PMMU state-frame save/restore, no
+	// command word2 at all (see fpu.go's decodeFSaveRestore for the
+	// structurally-identical FPU equivalent). No fpuWord1Base-style
+	// coprocessor-ID adjustment applies here either — these literals are
+	// used as-is.
+	valPSAVE    = 0xF100
+	valPRESTORE = 0xF140
+
 	// FPU "general instruction" family (68881/68882/68040/68060 built-in
 	// FPU): word1 is 0xF200 with the <ea> mode/reg in bits 5-0 (unused,
 	// left 0, for the register-to-register form). See fpu.go for the full
@@ -411,6 +419,8 @@ var opcodeBuckets = [16][]OpcodePattern{
 		// (all of which start at 0xF200+), so ordering relative to them
 		// doesn't matter.
 		mmuMasked(maskFFC0, valPMOVE, decodePMMUGeneral),
+		mmuMasked(maskFFC0, valPSAVE, decodePSAVE),
+		mmuMasked(maskFFC0, valPRESTORE, decodePRESTORE),
 
 		// valFDBcc and the three valFTRAPcc literals must precede valFScc:
 		// each occupies a specific EA sub-slot (address-register-direct for

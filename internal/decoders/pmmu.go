@@ -331,3 +331,30 @@ func decodeBADBAC(data []byte, opcode uint16, inst *Instruction, cpu CPU, word2 
 	setInstruction(data, inst, offset, "PMOVE.L", regMeta.Text+", "+eaText, regMeta, eaMeta)
 	return nil
 }
+
+// decodePSAVE and decodePRESTORE decode the PMMU coprocessor state-frame
+// save/restore instructions — structurally identical to fpu.go's
+// decodeFSaveRestore (FSAVE/FRESTORE), except PMMU's word1 needs no
+// coprocessor-ID adjustment (0xF100/0xF140 are used exactly as GAS's own
+// table lists them, unlike FPU's 0xF100/0xF140-that-become-0xF300/0xF340).
+// As with FSAVE/FRESTORE, frame contents are out of scope — only the
+// instruction shell (mnemonic + <ea>) is decoded, per
+// docs/design-fpu-mmu.md's Non-goals.
+func decodePSAVE(data []byte, opcode uint16, inst *Instruction, cpu CPU) error {
+	return decodePMMUSaveRestore(data, opcode, inst, cpu, "PSAVE")
+}
+
+func decodePRESTORE(data []byte, opcode uint16, inst *Instruction, cpu CPU) error {
+	return decodePMMUSaveRestore(data, opcode, inst, cpu, "PRESTORE")
+}
+
+func decodePMMUSaveRestore(data []byte, opcode uint16, inst *Instruction, cpu CPU, mnemonic string) error {
+	mode := uint8((opcode >> 3) & 0x7)
+	reg := uint8(opcode & 0x7)
+	eaText, offset, eaMeta, err := decodeEA(data, inst.Address, 2, mode, reg, cpu)
+	if err != nil {
+		return err
+	}
+	setInstruction(data, inst, offset, mnemonic, eaText, eaMeta)
+	return nil
+}
