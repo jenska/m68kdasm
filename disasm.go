@@ -20,6 +20,15 @@ type Instruction struct {
 	Bytes          []byte // Die Rohdaten der Instruktion
 	ExtensionWords []uint16
 	Metadata       DecodeMetadata
+	// Label is the resolved name for this instruction's own address —
+	// the caller's own Symbolizer name if one resolves it, else a
+	// synthetic label — set only when DecodeOptions.Labels was non-nil
+	// and some operand elsewhere in the disassembled range targets this
+	// address. Empty otherwise. Uses the same Symbolizer-first
+	// precedence as operand rendering, so Label always matches whatever
+	// name other instructions' operands show when they reference this
+	// address. See docs/design-labels.md.
+	Label string
 }
 
 // Assembly liefert den reinen Assembler-Code (Mnemonic + Operanden).
@@ -96,7 +105,102 @@ func DisassembleRangeWithOptions(data []byte, startAddress uint32, opts DecodeOp
 		offset += int(inst.Size)
 	}
 
+	if opts.Labels != nil {
+		applyLabels(instructions, opts)
+	}
+
 	return instructions, nil
+}
+
+// applyLabels is DisassembleRangeWithOptions's pass 2 (see
+// docs/design-labels.md): pass 1 above decodes sequentially and has no
+// knowledge of instructions later in the stream, so a forward branch can't
+// be named until every instruction in the range is known. This pass walks
+// the now-complete slice to collect candidate target addresses, names the
+// ones that land on a decoded instruction, and re-renders every
+// instruction's Operands through the existing Symbolizer-driven rendering
+// path — via a composite Symbolizer that tries the caller's own first —
+// so label rendering reuses formatOperand's precedence chain rather than
+// adding a parallel one.
+//
+// This step collects only OperandKindBranchTarget candidates (Bcc/BSR/
+// DBcc/FBcc/FDBcc/PBcc/PDBcc, and any future branch-shaped family) — the
+// zero-mnemonic-matching case, since branchOperand tags all of them
+// identically. JSR/JMP/PEA/LEA's MnemonicBase-gated EffectiveAddress
+// candidates are a follow-up (docs/design-labels.md's delivery-sequence
+// step 3), not yet collected here.
+func applyLabels(instructions []Instruction, opts DecodeOptions) {
+	prefix := "l"
+	if opts.Labels.Prefix != "" {
+		prefix = opts.Labels.Prefix
+	}
+
+	instByAddr := make(map[uint32]int, len(instructions))
+	for i, inst := range instructions {
+		instByAddr[inst.Address] = i
+	}
+
+	candidates := make(map[uint32]bool)
+	for _, inst := range instructions {
+		for _, operand := range inst.Metadata.Operands {
+			if operand.Kind == OperandKindBranchTarget && operand.BranchTarget != nil {
+				candidates[*operand.BranchTarget] = true
+			}
+		}
+	}
+
+	labels := make(map[uint32]string, len(candidates))
+	for addr := range candidates {
+		if _, ok := instByAddr[addr]; !ok {
+			// Doesn't land on a decoded instruction (self-modifying code,
+			// data-in-code, outside the range, or inside a gap a partial
+			// decode left undecoded) — stays raw hex, never a dangling
+			// label with nothing to attach a definition line to.
+			continue
+		}
+		labels[addr] = fmt.Sprintf("%s%08X", prefix, addr)
+	}
+
+	if len(labels) == 0 {
+		return
+	}
+
+	symbolizer := labelSymbolizer{primary: opts.Symbolizer, labels: labels}
+	for i := range instructions {
+		// Label uses the same Symbolizer-first precedence as operand
+		// rendering below, so it always matches whatever name other
+		// instructions' operands show when they reference this address
+		// — a caller-supplied Symbolizer name, not just a synthetic one,
+		// when the Symbolizer covers this address.
+		if _, isTarget := labels[instructions[i].Address]; isTarget {
+			if name, ok := symbolizer.Symbolize(instructions[i].Address); ok {
+				instructions[i].Label = name
+			}
+		}
+		if len(instructions[i].Metadata.Operands) > 0 {
+			instructions[i].Operands = formatOperands(instructions[i].Metadata.Operands, symbolizer)
+		}
+	}
+}
+
+// labelSymbolizer composes a caller-supplied Symbolizer (tried first, so a
+// caller's own naming always wins) with the synthetic label table applyLabels
+// built. It implements Symbolizer itself, so it plugs directly into the
+// existing formatOperand/formatOperands rendering path with no changes to
+// either.
+type labelSymbolizer struct {
+	primary Symbolizer
+	labels  map[uint32]string
+}
+
+func (l labelSymbolizer) Symbolize(address uint32) (string, bool) {
+	if l.primary != nil {
+		if name, ok := l.primary.Symbolize(address); ok {
+			return name, ok
+		}
+	}
+	name, ok := l.labels[address]
+	return name, ok
 }
 
 func decodeInstruction(initial []byte, address uint32, reader addressReader, opts DecodeOptions) (*Instruction, error) {

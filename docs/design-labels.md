@@ -2,11 +2,14 @@
 
 ## Status
 
-**In progress.** Delivery-sequence step 1 (the ELF options-plumbing prerequisite) is done; the labels
-feature itself (steps 2-5) has not started. This is a new, independent feature — it does not follow on
-from [design-cpu-variants.md](design-cpu-variants.md) or [design-fpu-mmu.md](design-fpu-mmu.md) and has
-no dependency on either being finished (both happen to be done as of this writing, but nothing here
-requires that).
+**In progress.** Steps 1, 2, and (as it turned out, for free — see step 2's note below) 4 are done: the
+ELF options-plumbing prerequisite, `LabelOptions`/`DecodeOptions.Labels`/`Instruction.Label`, and the
+full two-pass `applyLabels` implementation for the `Bcc`/`BSR`/`DBcc`/`FBcc`/`FDBcc`/`PBcc`/`PDBcc`
+branch family — including universal rendering, which needed no dedicated work at all. Only step 3
+(`JSR`/`JMP`/`PEA`/`LEA` classification) and step 5 (`String()` formatting) remain. This is a new,
+independent feature — it does not follow on from [design-cpu-variants.md](design-cpu-variants.md) or
+[design-fpu-mmu.md](design-fpu-mmu.md) and has no dependency on either being finished (both happen to be
+done as of this writing, but nothing here requires that).
 
 ## Current state
 
@@ -306,17 +309,29 @@ Every existing test should pass unmodified; nothing here touches `internal/decod
    `example_elf_test.go`): unrecognized (`DC.W`) via the old no-options method, correctly decoded via
    the new `WithOptions` ones — confirming `DecodeOptions` genuinely reaches ELF-sourced disassembly now,
    not just that the new methods compile.
-2. **Plumbing PR**: `LabelOptions`, `DecodeOptions.Labels`, `Instruction.Label`, and the pass-2 skeleton
-   in `DisassembleRangeWithOptions`, wired up but collecting only `OperandKindBranchTarget` candidates
-   (`Bcc`/`BSR`/`DBcc`/`FBcc`/`FDBcc`/`PBcc`/`PDBcc`) — the zero-mnemonic-matching case, so this PR
-   touches no instruction-family-specific logic at all.
+2. ~~**Plumbing PR**~~ — done: `LabelOptions`, `DecodeOptions.Labels`, `Instruction.Label`, and the pass-2
+   implementation (`applyLabels`/`labelSymbolizer`, `disasm.go`), wired into `DisassembleRangeWithOptions`
+   after the existing pass-1 loop. Collects only `OperandKindBranchTarget` candidates
+   (`Bcc`/`BSR`/`DBcc`/`FBcc`/`FDBcc`/`PBcc`/`PDBcc`) — the zero-mnemonic-matching case, so this step
+   touched no instruction-family-specific logic. One real correction made before shipping: `Instruction.Label`
+   was first implemented as always the *synthetic* name, but that's inconsistent with operand rendering's
+   own Symbolizer-first precedence — a target address the caller's `Symbolizer` already names should
+   report that same name via `Label`, not silently prefer a synthetic one nobody's operand text actually
+   uses. Fixed to route `Label` through the identical `labelSymbolizer.Symbolize` call operand rendering
+   uses, caught by `TestLabelsWithSymbolizer` before merging. Also confirmed empirically
+   (`TestLabelsNoOpOnSingleDecode`) that `Decode`/`DecodeWithOptions` need no code change at all to honor
+   the "silently ignored" contract — an unread struct field is a no-op by construction in Go.
+   **~~Universal-rendering (step 4)~~ turned out to already be built-in**, not a separate step: because
+   `applyLabels` re-renders every instruction's operands unconditionally (not gated by which instruction
+   created the label), a plain `MOVE.L $addr,D0` referencing an address only a `BRA` elsewhere targets
+   already renders the label, confirmed by `TestLabelsUniversalRendering` — with none of step 3's
+   `JSR`/`JMP`/`PEA`/`LEA` classification landed yet. Step 4 below is now just documentation of an
+   already-verified property, not remaining work.
 3. **`JSR`/`JMP`/`PEA`/`LEA` PR**: add the `MnemonicBase`-gated `OperandKindEffectiveAddr` candidate
-   collection for all four mnemonics.
-4. **Universal-rendering PR**: extend the pass-2 re-render step to apply the label table to every operand
-   referencing a labeled address (the `MOVE.L l00001234,D0` case), not only the operand that created
-   the label — the step that turns "labels exist" into "labels are used consistently everywhere they're
-   referenced." (This may already fall out of step 2/3's implementation for free, depending how the
-   re-render is structured — worth checking before treating it as separate work.)
+   collection for all four mnemonics — the only remaining classification work; rendering already handles
+   whatever this step collects, per the note above.
+4. ~~**Universal-rendering PR**~~ — see step 2's note: this fell out of the pass-2 implementation for
+   free and needs no dedicated work.
 5. **`String()`/formatting PR**: decide and land the exact label-line rendering convention, informed by
    how step 2-4's output actually reads in practice.
 

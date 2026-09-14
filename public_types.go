@@ -29,6 +29,27 @@ type DecodeOptions struct {
 	// MOVEC opcode (already decoded unconditionally) rather than any
 	// F-line opcode. See docs/design-fpu-mmu.md.
 	MMU bool
+	// Labels enables synthetic label generation for branch/call targets
+	// that fall within a disassembled range and land on a decoded
+	// instruction (e.g. rendering "BRA l00001010" and setting
+	// Instruction.Label = "l00001010" on the instruction at that
+	// address). Nil (the zero value) preserves prior behavior — no
+	// labels, no rendering change, no extra cost. Meaningful only for
+	// DisassembleRange/DisassembleRangeWithOptions and the
+	// ELFDisassembler DisassembleSection*WithOptions methods; silently
+	// has no effect on Decode/DecodeWithOptions/DecodeReaderAt*/
+	// DecodeFunc*, which have no "rest of the stream" to find a forward
+	// reference in. See docs/design-labels.md.
+	Labels *LabelOptions
+}
+
+// LabelOptions configures synthetic label generation. The zero value
+// (Prefix "") uses the default prefix "l" once Labels is non-nil.
+type LabelOptions struct {
+	// Prefix is prepended to the 8-hex-digit address to form a synthetic
+	// label name (e.g. "l" -> "l00001010"). Defaults to "l" when Labels
+	// is non-nil but Prefix is empty.
+	Prefix string
 }
 
 type Symbolizer interface {
