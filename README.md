@@ -12,6 +12,7 @@ A Go disassembler for the Motorola 68000 family (68000, 68010, CPU32, 68020, 680
 - CPU-variant opcode support: `MOVEC`/`MOVES`/`RTD` (68010+), `BGND` (CPU32), and 68020+ additions — `BFxxx` bitfield ops, `CAS`, `CHK2`/`CMP2`, 32×32 `MULU.L`/`MULS.L`/`DIVU.L`/`DIVS.L`, `PACK`/`UNPK`, `CALLM`/`RTM` (68020/68030 only), `TRAPcc`, `LINK.L`, `EXTB.L`, `CHK.L`.
 - Optional FPU decoding (68881/68882, or the 68040/68060's built-in FPU): the full `FMOVE`/`FADD`/`FSUB`/`FMUL`/`FDIV`/`FCMP`/`FABS`/`FNEG`/`FSQRT`/`FTST` family in all 7 data formats (including packed BCD with k-factor), `FMOVEM` (both the `FPn` and `FPCR`/`FPSR`/`FPIAR` register-list forms), the transcendental and math-extension function sets, `FMOVECR`, `FSINCOS`, the `FBcc`/`FDBcc`/`FScc`/`FTRAPcc` condition family, and `FSAVE`/`FRESTORE`.
 - Optional PMMU decoding (68851, or the 68030's built-in PMMU): `PMOVE`'s full register set, `PMOVEFD`, `PFLUSHA`/`PFLUSH`/`PFLUSHS`/`PFLUSHR`, `PLOADR`/`PLOADW`, `PTESTR`/`PTESTW`, `PSAVE`/`PRESTORE`, the `PBcc`/`PDBcc`/`PScc`/`PTRAPcc` condition family, and the 68040's own simplified single-word PMMU forms.
+- Optional auto-generated labels for branch/call targets within a disassembled range (`BRA l00001010` plus a matching `Instruction.Label`), with a caller-supplied `Symbolizer` name always taking precedence over a synthetic one.
 - Exact decoded instruction length via `Instruction.Size`.
 - Decoded extension words via `Instruction.ExtensionWords`.
 - Structured metadata for mnemonic, operands, branch targets, immediates, and effective-address kinds.
@@ -243,6 +244,33 @@ fmt.Println(inst.Assembly())                                // JSR _pc_target
 fmt.Println(*inst.Metadata.Operands[0].EffectiveAddress.ResolvedAddress) // 4114
 ```
 
+## Auto-Generated Labels
+
+`DecodeOptions.Labels` opts in to synthetic label generation for branch/call targets that fall within a disassembled range and land on a decoded instruction — no need to supply your own `Symbolizer` just to see readable branch targets in a listing.
+
+```go
+instrs, err := m68kdasm.DisassembleRangeWithOptions([]byte{
+	0x60, 0x02, // BRA.S $1004
+	0x4E, 0x71, // NOP
+	0x4E, 0x75, // RTS
+}, 0x1000, m68kdasm.DecodeOptions{
+	Labels: &m68kdasm.LabelOptions{},
+})
+if err != nil {
+	log.Fatal(err)
+}
+
+fmt.Println(instrs[0].Assembly()) // BRA.S l00001004
+fmt.Println(instrs[2].Label)      // l00001004
+fmt.Println(instrs[2].String())
+// l00001004:
+// 00001004: RTS
+```
+
+Labels are created by branch/decrement-branch instructions (`Bcc`, `BSR`, `DBcc`, `FBcc`, `FDBcc`, `PBcc`, `PDBcc`) and by `JSR`/`JMP`/`PEA`/`LEA` targeting an absolute or PC-relative address — `PEA`/`LEA` are included specifically to catch indirect-call trampolines (`LEA sub,A0` then `JSR (A0)`), which also means a `LEA`/`PEA` loading a plain data-buffer address gets labeled too, a deliberate trade-off. Once an address has a label, *every* operand referencing it renders that name, not just the operand that created it — a plain `MOVE.L $addr,D0` picks up the same label a `JSR` elsewhere in the range established. A caller-supplied `Symbolizer` always takes precedence over a synthetic label; the default `l` prefix is configurable via `LabelOptions.Prefix`.
+
+This is a `DisassembleRange`/`DisassembleRangeWithOptions` (and `ELFDisassembler` `WithOptions`) feature only — it needs the full instruction stream to find forward references, so `DecodeOptions.Labels` is silently a no-op on the single-instruction `Decode*` entry points. See [docs/design-labels.md](docs/design-labels.md) for the full design.
+
 ## Partial Decode Errors
 
 Truncated fetches return `*PartialDecodeError` with the missing-byte count and context:
@@ -291,6 +319,8 @@ func main() {
 	}
 }
 ```
+
+`DisassembleSection`/`DisassembleAllExecutableSections` always decode as plain `M68000` with no `Symbolizer`. Use `DisassembleSectionWithOptions`/`DisassembleAllExecutableSectionsWithOptions` to pass a full `DecodeOptions` (CPU/FPU/MMU selection, a `Symbolizer`, `Labels`, etc.) through to ELF-sourced disassembly.
 
 ## Building And Testing
 
