@@ -59,6 +59,16 @@ func TestFPUGenericRoundTrip(t *testing.T) {
 		"FADD.L #5, FP0",
 		"FADD.W #5, FP0",
 		"FADD.B #5, FP0",
+
+		"FMOVEM.X FP0-FP3, -(A7)",
+		"FMOVEM.X FP0-FP3, (A0)",
+		"FMOVEM.X (A0)+, FP0-FP3",
+		"FMOVEM.X D0, -(A7)",
+		"FMOVEM.X D0, (A0)",
+		"FMOVEM.X (A0)+, D0",
+		"FMOVEM.X (A0), D0",
+		"FMOVEM.X FP5, -(A7)",
+		"FMOVEM.X FP1/FP4/FP6, (A0)",
 	}
 
 	for _, source := range testCases {

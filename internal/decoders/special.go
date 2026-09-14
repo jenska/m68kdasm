@@ -248,11 +248,14 @@ func formatRegisterRange(registers []string) string {
 	return result
 }
 
+// extractRegNum returns the trailing digit(s) of a register name (e.g. 3
+// for "D3", "A3", or "FP3" — any single-letter or multi-letter prefix), or
+// -1 if regName doesn't end in a single-digit 0-7 register number.
 func extractRegNum(regName string) int {
 	if len(regName) < 2 {
 		return -1
 	}
-	num := regName[1] - '0'
+	num := regName[len(regName)-1] - '0'
 	if num <= 7 {
 		return int(num)
 	}
