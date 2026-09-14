@@ -11,15 +11,17 @@ import (
 // This file decodes: the FPU "general instruction" family (68881/68882, or
 // the 68040/68060's built-in FPU, which is opcode-compatible for this
 // subset) — FMOVE, FADD, FSUB, FMUL, FDIV, FCMP, FABS, FNEG, FSQRT, FTST,
-// FNOP, FMOVEM (FPn register-list save/restore) — and the FPU's own
-// conditional branch/set/trap family, FBcc/FDBcc/FScc/FTRAPcc (a distinct
-// 32-condition space from the integer ISA's 16). It covers steps 3-5 and 7
-// of docs/design-fpu-mmu.md's delivery sequence, deliberately matching the
+// FNOP, FMOVEM (FPn register-list save/restore), and the full transcendental
+// function set (FSIN, FCOS, FLOGN, ...) — and the FPU's own conditional
+// branch/set/trap family, FBcc/FDBcc/FScc/FTRAPcc (a distinct 32-condition
+// space from the integer ISA's 16). It covers steps 3-7 of
+// docs/design-fpu-mmu.md's delivery sequence, deliberately matching the
 // scope of github.com/jenska/m68kasm's own equivalent milestones
 // (internal/asm/instructions/cpu020_fpu.go, cpu020_fpu_movem.go,
-// cpu020_fpu_cond.go) — the transcendental function set, FSAVE/FRESTORE,
-// FMOVEM's FPCR/FPSR/FPIAR control-register-list form, FMOVECR, and
-// packed-BCD store (k-factor) are follow-ups, not implemented here.
+// cpu020_fpu_cond.go, cpu020_fpu_trans.go) — FSAVE/FRESTORE, FMOVEM's
+// FPCR/FPSR/FPIAR control-register-list form, FMOVECR, FSINCOS, the
+// FGETEXP/FGETMAN/FSCALE/FMOD/FREM math-extension bucket, and packed-BCD
+// store (k-factor) are follow-ups, not implemented here.
 //
 // Every bit position below was read from m68kasm v1.5.0's verified encoder
 // (internal/asm/encode.go's applyField/fpFormatCode/fpRMBit), itself
@@ -96,6 +98,36 @@ var fpGeneralOps = map[uint16]fpOpInfo{
 	0x1A: {"FNEG", true, false},
 	0x04: {"FSQRT", true, false},
 	0x3A: {"FTST", false, false},
+
+	// Transcendental function set — a discrete 68881/68882 executes these
+	// natively; a 68040/68060's integrated FPU traps and emulates them in
+	// software, which is not disassembler-visible (the opcode and its
+	// decode are identical either way), so these are gated by the same
+	// DecodeOptions.FPU flag as everything else above rather than a
+	// separate "full FPU" capability — see m68kasm's requireFPUFull for
+	// the encoder-side distinction this project deliberately doesn't
+	// mirror on the decode side. Every one of these is the same monadic
+	// "<ea>,FPn"/"FPm,FPn" shape FABS/FNEG/FSQRT already use (hasDst:
+	// true, canStore: false). opBase values copied verbatim from
+	// m68kasm's cpu020_fpu_trans.go, itself decoded from GAS's m68k-opc.c.
+	0x0E: {"FSIN", true, false},
+	0x1D: {"FCOS", true, false},
+	0x0F: {"FTAN", true, false},
+	0x0A: {"FATAN", true, false},
+	0x0C: {"FASIN", true, false},
+	0x1C: {"FACOS", true, false},
+	0x0D: {"FATANH", true, false},
+	0x02: {"FSINH", true, false},
+	0x19: {"FCOSH", true, false},
+	0x09: {"FTANH", true, false},
+	0x10: {"FETOX", true, false},
+	0x08: {"FETOXM1", true, false},
+	0x14: {"FLOGN", true, false},
+	0x06: {"FLOGNP1", true, false},
+	0x15: {"FLOG10", true, false},
+	0x16: {"FLOG2", true, false},
+	0x11: {"FTWOTOX", true, false},
+	0x12: {"FTENTOX", true, false},
 }
 
 // fpConditions names the FPU's 32 condition codes, indexed by condition

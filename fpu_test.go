@@ -14,6 +14,15 @@ var fpuTarget = m68kasm.ParseOptions{
 	Target: m68kasm.Target{CPU: m68kasm.CPU68020, Features: m68kasm.FeatFPU},
 }
 
+// fpuFullTarget additionally enables the transcendental function set
+// (m68kasm models a discrete 68881/68882 vs. a reduced/integrated FPU as
+// two separate feature bits; this decoder doesn't mirror that distinction
+// — see the comment on fpGeneralOps' transcendental entries in
+// internal/decoders/fpu.go).
+var fpuFullTarget = m68kasm.ParseOptions{
+	Target: m68kasm.Target{CPU: m68kasm.CPU68020, Features: m68kasm.FeatFPU | m68kasm.FeatFPUFull},
+}
+
 // TestFPUGenericRoundTrip assembles each case with m68kasm v1.5.0 (the
 // first Go module release with verified FPU encoding — see the CHANGELOG
 // and docs/design-fpu-mmu.md) and confirms this package's decoder recovers
@@ -87,6 +96,43 @@ func TestFPUGenericRoundTrip(t *testing.T) {
 			}
 			if got := inst.Assembly(); got != source {
 				t.Errorf("mismatch\n want: %q\n  got: %q\nbytes: % X", source, got, data)
+			}
+		})
+	}
+}
+
+// TestFPUTranscendentalRoundTrip covers the FPU's transcendental function
+// set — same monadic "<ea>,FPn"/"FPm,FPn" shape as FABS/FNEG/FSQRT, just an
+// FeatFPUFull-gated (real discrete 68881/68882) opmode set on the assembler
+// side. See fpGeneralOps' transcendental entries in internal/decoders/fpu.go.
+func TestFPUTranscendentalRoundTrip(t *testing.T) {
+	mnemonics := []string{
+		"FSIN", "FCOS", "FTAN", "FATAN", "FASIN", "FACOS", "FATANH",
+		"FSINH", "FCOSH", "FTANH", "FETOX", "FETOXM1", "FLOGN", "FLOGNP1",
+		"FLOG10", "FLOG2", "FTWOTOX", "FTENTOX",
+	}
+
+	for _, mnemonic := range mnemonics {
+		t.Run(mnemonic, func(t *testing.T) {
+			for _, source := range []string{
+				mnemonic + ".X FP1, FP0",
+				mnemonic + ".L (A0), FP0",
+			} {
+				data, err := m68kasm.AssembleStringWithOptions(source, fpuFullTarget)
+				if err != nil {
+					t.Fatalf("assembler error for %q: %v", source, err)
+				}
+
+				inst, err := DecodeWithOptions(data, 0, DecodeOptions{CPU: M68020, FPU: true})
+				if err != nil {
+					t.Fatalf("decode error for %q (bytes % X): %v", source, data, err)
+				}
+				if int(inst.Size) != len(data) {
+					t.Errorf("%q: decoded size %d, assembled %d bytes (% X)", source, inst.Size, len(data), data)
+				}
+				if got := inst.Assembly(); got != source {
+					t.Errorf("mismatch\n want: %q\n  got: %q\nbytes: % X", source, got, data)
+				}
 			}
 		})
 	}

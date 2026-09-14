@@ -251,10 +251,16 @@ code is verified against the datasheet.
    against m68kasm's `cpu020_fpu_movem.go` including a byte-level cross-check against its own literal
    test vectors before any decode logic was written. **Not done**: the separate `FPCR`/`FPSR`/`FPIAR`
    control-register-list form (`cpu020_fpu_movem_ctrl.go` in m68kasm) — still open.
-6. **FPU transcendental PR**: `FSIN`/`FCOS`/`FTAN`/`FATAN`/`FLOGN`/`FLOG2`/`FETOX`/`FGETEXP`/
-   `FGETMAN`/etc. — same opcode shape as step 3/4, just more opmode table entries; separated only
-   because there are ~30 of them and reviewing that many mnemonic/opmode pairs at once against a
-   datasheet is its own chunk of verification work.
+6. ~~**FPU transcendental PR**~~ — done: `FSIN`/`FCOS`/`FTAN`/`FATAN`/`FASIN`/`FACOS`/`FATANH`/`FSINH`/
+   `FCOSH`/`FTANH`/`FETOX`/`FETOXM1`/`FLOGN`/`FLOGNP1`/`FLOG10`/`FLOG2`/`FTWOTOX`/`FTENTOX` — all 18
+   are the exact same monadic shape as `FABS`/`FNEG`/`FSQRT`, so this was purely opmode-table entries in
+   `fpGeneralOps`, no new decode logic. Gated by the same `DecodeOptions.FPU` flag as everything else,
+   not a separate "full FPU" capability (m68kasm's `FeatFPUFull` encoder-side distinction between a
+   discrete 68881/68882 and a reduced/integrated FPU isn't disassembler-visible — the opcode decodes
+   identically either way). **Not done** from the original scope of this step: `FGETEXP`/`FGETMAN`/
+   `FSCALE`/`FMOD`/`FREM` (the separate "math extensions" bucket, genuinely binary not monadic for
+   `FSCALE`/`FMOD`/`FREM`) and `FSINCOS` (a dual-destination shape) — see m68kasm's
+   `cpu020_fpu_mathext.go`/`cpu020_fpu_sincos.go`, still open.
 7. ~~**FP condition/branch PR**~~ — done: `FBcc` (word/long displacement), `FDBcc`, `FScc`, `FTRAPcc`
    (bare/word/long), with the 32-entry (5-bit, not 6 as this doc originally guessed before the real
    condition table was read from m68kasm) FP condition table. Implementing this surfaced and fixed a
