@@ -246,17 +246,23 @@ code is verified against the datasheet.
    than "verify against the PRM," since it's machine-checked by round-tripping real assembled bytes).
    Not yet done from the original step 4 scope: `FMOVEM` and packed-decimal (`.p`) store's k-factor —
    still open, see steps below. `FMOVECR` (ROM constant load) is also still open.
-5. **FMOVEM PR**: register list (static mask or dynamic Dn-specified) to/from memory (general and
-   predecrement addressing), and to/from the `FPCR`/`FPSR`/`FPIAR` control registers — mirrors the
-   existing integer `MOVEM` decoder's shape. m68kasm v1.5.0 has this
-   (`internal/asm/instructions/cpu020_fpu_movem.go`/`cpu020_fpu_movem_ctrl.go`), so it's verifiable the
-   same way step 3/4 was.
+5. ~~**FMOVEM PR**~~ — done: static/dynamic register list, to/from general memory or predecrement
+   addressing (see [internal/decoders/fpu.go](../internal/decoders/fpu.go)'s `decodeFMOVEM`), verified
+   against m68kasm's `cpu020_fpu_movem.go` including a byte-level cross-check against its own literal
+   test vectors before any decode logic was written. **Not done**: the separate `FPCR`/`FPSR`/`FPIAR`
+   control-register-list form (`cpu020_fpu_movem_ctrl.go` in m68kasm) — still open.
 6. **FPU transcendental PR**: `FSIN`/`FCOS`/`FTAN`/`FATAN`/`FLOGN`/`FLOG2`/`FETOX`/`FGETEXP`/
    `FGETMAN`/etc. — same opcode shape as step 3/4, just more opmode table entries; separated only
    because there are ~30 of them and reviewing that many mnemonic/opmode pairs at once against a
    datasheet is its own chunk of verification work.
-7. **FP condition/branch PR**: `FBcc` (short/long displacement, mirroring integer `Bcc`'s existing
-   pattern), `FDBcc`, `FScc`, `FTRAPcc`, with the new 6-bit FP condition table.
+7. ~~**FP condition/branch PR**~~ — done: `FBcc` (word/long displacement), `FDBcc`, `FScc`, `FTRAPcc`
+   (bare/word/long), with the 32-entry (5-bit, not 6 as this doc originally guessed before the real
+   condition table was read from m68kasm) FP condition table. Implementing this surfaced and fixed a
+   real, independent bug: `decodeBxx`'s `.W`/`.L` forms and `decodeDBcc` computed the branch target
+   relative to the instruction's *total length* rather than *(address + 2)*, off by 2-4 bytes on every
+   16/32-bit-displacement branch — undetected because no prior test exercised those forms via the
+   assembler. Fixed in the same session (`branch.go`'s new `branchTarget` helper), reused by
+   `FBcc`/`FDBcc` so both families share one verified formula. See commit history for detail.
 8. **FSAVE/FRESTORE PR** (optional, low priority): decode the instruction shell (`<ea>`, format byte)
    without interpreting frame contents, per Non-goals.
 9. **68851/68030 PMMU PR**: `PLOAD`, `PFLUSH`/`PFLUSHA`, `PMOVE`, `PTEST`, `PVALID`, gated on a new `MMU`

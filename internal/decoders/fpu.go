@@ -8,14 +8,16 @@ import (
 	"strconv"
 )
 
-// This file decodes the FPU "general instruction" family (68881/68882, or
+// This file decodes: the FPU "general instruction" family (68881/68882, or
 // the 68040/68060's built-in FPU, which is opcode-compatible for this
-// subset): FMOVE, FADD, FSUB, FMUL, FDIV, FCMP, FABS, FNEG, FSQRT, FTST,
-// FNOP, and FMOVEM (FPn register-list save/restore). It covers steps 3-5 of
-// docs/design-fpu-mmu.md's delivery sequence, deliberately matching the
+// subset) — FMOVE, FADD, FSUB, FMUL, FDIV, FCMP, FABS, FNEG, FSQRT, FTST,
+// FNOP, FMOVEM (FPn register-list save/restore) — and the FPU's own
+// conditional branch/set/trap family, FBcc/FDBcc/FScc/FTRAPcc (a distinct
+// 32-condition space from the integer ISA's 16). It covers steps 3-5 and 7
+// of docs/design-fpu-mmu.md's delivery sequence, deliberately matching the
 // scope of github.com/jenska/m68kasm's own equivalent milestones
-// (internal/asm/instructions/cpu020_fpu.go, cpu020_fpu_movem.go) —
-// the transcendental function set, FBcc/FDBcc/FScc/FTRAPcc, FSAVE/FRESTORE,
+// (internal/asm/instructions/cpu020_fpu.go, cpu020_fpu_movem.go,
+// cpu020_fpu_cond.go) — the transcendental function set, FSAVE/FRESTORE,
 // FMOVEM's FPCR/FPSR/FPIAR control-register-list form, FMOVECR, and
 // packed-BCD store (k-factor) are follow-ups, not implemented here.
 //
