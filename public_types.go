@@ -11,6 +11,14 @@ type DecodeOptions struct {
 	// CPU selects the target 68k family member. The zero value, M68000,
 	// decodes plain 68000 opcodes only, preserving prior behavior.
 	CPU CPU
+	// FPU enables decoding of the 68881/68882 (or 68040/68060-integrated)
+	// FPU instruction set (the F-line "general instruction" family:
+	// FMOVE/FADD/FSUB/FMUL/FDIV/FCMP/FABS/FNEG/FSQRT/FTST/FNOP). FPU
+	// presence is an attached-coprocessor question independent of CPU — a
+	// bare 68020 with an external 68881 and a 68040's built-in FPU both
+	// just set FPU: true. The zero value, false, preserves prior behavior
+	// (F-line opcodes render as DC.W). See docs/design-fpu-mmu.md.
+	FPU bool
 }
 
 type Symbolizer interface {
@@ -60,6 +68,7 @@ const (
 	RegisterKindData    = decoders.RegisterKindData
 	RegisterKindAddress = decoders.RegisterKindAddress
 	RegisterKindPC      = decoders.RegisterKindPC
+	RegisterKindFP      = decoders.RegisterKindFP
 
 	EAKindDataRegisterDirect    = decoders.EAKindDataRegisterDirect
 	EAKindAddressRegisterDirect = decoders.EAKindAddressRegisterDirect

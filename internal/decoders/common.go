@@ -305,6 +305,8 @@ func registerPrefix(kind RegisterKind) string {
 		return "A"
 	case RegisterKindPC:
 		return "PC"
+	case RegisterKindFP:
+		return "FP"
 	default:
 		return "D"
 	}

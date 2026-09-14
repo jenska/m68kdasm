@@ -10,11 +10,11 @@ func sameDecoder(a, b OpcodeDecoder) bool {
 }
 
 func TestMOVES_CPUGating(t *testing.T) {
-	if d := FindDecoder(valMOVES, M68000); d != nil {
+	if d := FindDecoder(valMOVES, M68000, false); d != nil {
 		t.Fatalf("MOVES should not decode on M68000, got %p", d)
 	}
 	for _, cpu := range []CPU{M68010, CPU32, M68020, M68030, M68040, M68060} {
-		if d := FindDecoder(valMOVES, cpu); !sameDecoder(d, decodeMOVES) {
+		if d := FindDecoder(valMOVES, cpu, false); !sameDecoder(d, decodeMOVES) {
 			t.Fatalf("MOVES should decode on %v, got %p", cpu, d)
 		}
 	}
@@ -22,30 +22,30 @@ func TestMOVES_CPUGating(t *testing.T) {
 
 func TestMOVEC_CPUGating(t *testing.T) {
 	for _, op := range []uint16{valMOVECFromCtl, valMOVECToCtl} {
-		if d := FindDecoder(op, M68000); d != nil {
+		if d := FindDecoder(op, M68000, false); d != nil {
 			t.Fatalf("MOVEC (opcode %04X) should not decode on M68000, got %p", op, d)
 		}
-		if d := FindDecoder(op, M68010); d == nil {
+		if d := FindDecoder(op, M68010, false); d == nil {
 			t.Fatalf("MOVEC (opcode %04X) should decode on M68010", op)
 		}
 	}
 }
 
 func TestRTD_CPUGating(t *testing.T) {
-	if d := FindDecoder(valRTD, M68000); d != nil {
+	if d := FindDecoder(valRTD, M68000, false); d != nil {
 		t.Fatalf("RTD should not decode on M68000, got %p", d)
 	}
-	if d := FindDecoder(valRTD, CPU32); !sameDecoder(d, decodeRTD) {
+	if d := FindDecoder(valRTD, CPU32, false); !sameDecoder(d, decodeRTD) {
 		t.Fatalf("RTD should decode on CPU32, got %p", d)
 	}
 }
 
 func TestBGND_CPU32Only(t *testing.T) {
-	if d := FindDecoder(valBGND, CPU32); !sameDecoder(d, decodeBGND) {
+	if d := FindDecoder(valBGND, CPU32, false); !sameDecoder(d, decodeBGND) {
 		t.Fatalf("BGND should decode as BGND on CPU32, got %p", d)
 	}
 	for _, cpu := range []CPU{M68000, M68010, M68020, M68030, M68040, M68060} {
-		d := FindDecoder(valBGND, cpu)
+		d := FindDecoder(valBGND, cpu, false)
 		if d == nil {
 			t.Fatalf("opcode %04X should still fall back to the TST decoder on %v", valBGND, cpu)
 		}
@@ -130,7 +130,7 @@ func TestDecodeMULLong(t *testing.T) {
 	if inst.Mnemonic != "MULU.L" || inst.Operands != "D0, D2" {
 		t.Fatalf("got %q %q", inst.Mnemonic, inst.Operands)
 	}
-	if d := FindDecoder(0x4C00, M68000); sameDecoder(d, decodeMULLong) {
+	if d := FindDecoder(0x4C00, M68000, false); sameDecoder(d, decodeMULLong) {
 		t.Fatalf("MULU.L should not decode on M68000")
 	}
 
@@ -155,7 +155,7 @@ func TestDecodePACK(t *testing.T) {
 	if inst.Mnemonic != "PACK" || inst.Operands != "D1, D0, #$1234" {
 		t.Fatalf("got %q %q", inst.Mnemonic, inst.Operands)
 	}
-	if d := FindDecoder(0x8141, M68000); sameDecoder(d, decodePACK) {
+	if d := FindDecoder(0x8141, M68000, false); sameDecoder(d, decodePACK) {
 		t.Fatalf("PACK should not decode on M68000")
 	}
 }
@@ -179,7 +179,7 @@ func TestDecodeCALLM_RTM(t *testing.T) {
 		t.Fatalf("got %q %q", inst.Mnemonic, inst.Operands)
 	}
 
-	if d := FindDecoder(0x06C3, M68040); sameDecoder(d, decodeRTM) {
+	if d := FindDecoder(0x06C3, M68040, false); sameDecoder(d, decodeRTM) {
 		t.Fatalf("RTM should not decode on M68040")
 	}
 }
@@ -204,7 +204,7 @@ func TestDecodeCAS(t *testing.T) {
 	if inst.Mnemonic != "CAS.W" || inst.Operands != "D1, D2, (A3)" {
 		t.Fatalf("got %q %q", inst.Mnemonic, inst.Operands)
 	}
-	if d := FindDecoder(0x0CD3, M68000); sameDecoder(d, decodeCAS) {
+	if d := FindDecoder(0x0CD3, M68000, false); sameDecoder(d, decodeCAS) {
 		t.Fatalf("CAS should not decode on M68000")
 	}
 }
@@ -228,7 +228,7 @@ func TestDecodeBitfield(t *testing.T) {
 		t.Fatalf("got %q %q", inst.Mnemonic, inst.Operands)
 	}
 
-	if d := FindDecoder(0xE0C0, M68000); sameDecoder(d, decodeBFTST) {
+	if d := FindDecoder(0xE0C0, M68000, false); sameDecoder(d, decodeBFTST) {
 		t.Fatalf("BFTST should not decode on M68000")
 	}
 }
@@ -249,7 +249,7 @@ func TestCPU020Opcodes_InheritedBy030_040_060(t *testing.T) {
 	}
 	for _, cpu := range []CPU{M68030, M68040, M68060} {
 		for _, op := range opcodes {
-			if FindDecoder(op, cpu) == nil {
+			if FindDecoder(op, cpu, false) == nil {
 				t.Errorf("opcode %04X should decode on %v (inherited from 68020 tagging)", op, cpu)
 			}
 		}
@@ -258,11 +258,11 @@ func TestCPU020Opcodes_InheritedBy030_040_060(t *testing.T) {
 
 func TestCALLM_RTM_RemovedStarting68040(t *testing.T) {
 	for _, op := range []uint16{valCALLM, valRTMDn, valRTMAn} {
-		if FindDecoder(op, M68030) == nil {
+		if FindDecoder(op, M68030, false) == nil {
 			t.Errorf("opcode %04X should still decode on M68030", op)
 		}
 		for _, cpu := range []CPU{M68040, M68060} {
-			d := FindDecoder(op, cpu)
+			d := FindDecoder(op, cpu, false)
 			if sameDecoder(d, decodeCALLM) || sameDecoder(d, decodeRTM) {
 				t.Errorf("opcode %04X should not decode as CALLM/RTM on %v", op, cpu)
 			}

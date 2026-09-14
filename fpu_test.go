@@ -1,0 +1,132 @@
+package m68kdasm
+
+import (
+	"testing"
+
+	"github.com/jenska/m68kasm"
+)
+
+// fpuTarget assembles with the base FPU feature (no transcendentals) on a
+// 68020 core, matching the decoder's own current scope (see
+// internal/decoders/fpu.go and docs/design-fpu-mmu.md's delivery
+// sequence, step 3).
+var fpuTarget = m68kasm.ParseOptions{
+	Target: m68kasm.Target{CPU: m68kasm.CPU68020, Features: m68kasm.FeatFPU},
+}
+
+// TestFPUGenericRoundTrip assembles each case with m68kasm v1.5.0 (the
+// first Go module release with verified FPU encoding — see the CHANGELOG
+// and docs/design-fpu-mmu.md) and confirms this package's decoder recovers
+// the exact same assembly text, the same round-trip discipline
+// TestDisassembleRoundTrip already uses for the integer core.
+func TestFPUGenericRoundTrip(t *testing.T) {
+	testCases := []string{
+		"FMOVE.X FP1, FP0",
+		"FADD.X FP1, FP0",
+		"FSUB.X FP1, FP0",
+		"FMUL.X FP1, FP0",
+		"FDIV.X FP1, FP0",
+		"FCMP.X FP1, FP0",
+		"FABS.X FP1, FP0",
+		"FNEG.X FP1, FP0",
+		"FSQRT.X FP1, FP0",
+		"FTST.X FP0",
+		"FNOP",
+
+		"FMOVE.L D0, FP0",
+		"FMOVE.W (A0), FP0",
+		"FMOVE.B (A0)+, FP0",
+		"FMOVE.L -(A0), FP0",
+		"FMOVE.X (A0), FP0",
+		"FADD.L (A0), FP0",
+		"FADD.S (A0), FP0",
+		"FADD.D (A0), FP0",
+		"FSUB.L (16,A0), FP1",
+		"FMUL.L $00001234, FP2",
+		"FDIV.L (4,A0,D1.W), FP3",
+		"FCMP.L (A0), FP0",
+		"FABS.L (A0), FP0",
+		"FNEG.L (A0), FP0",
+		"FSQRT.L (A0), FP0",
+		"FTST.L (A0)",
+		"FTST.L D0",
+
+		"FMOVE.L FP0, (A0)",
+		"FMOVE.W FP1, (A0)+",
+		"FMOVE.B FP2, -(A0)",
+		"FMOVE.X FP3, (A0)",
+
+		"FADD.L #5, FP0",
+		"FADD.W #5, FP0",
+		"FADD.B #5, FP0",
+	}
+
+	for _, source := range testCases {
+		t.Run(source, func(t *testing.T) {
+			data, err := m68kasm.AssembleStringWithOptions(source, fpuTarget)
+			if err != nil {
+				t.Fatalf("assembler error for %q: %v", source, err)
+			}
+
+			inst, err := DecodeWithOptions(data, 0, DecodeOptions{CPU: M68020, FPU: true})
+			if err != nil {
+				t.Fatalf("decode error for %q (bytes % X): %v", source, data, err)
+			}
+			if int(inst.Size) != len(data) {
+				t.Errorf("%q: decoded size %d, assembled %d bytes (% X)", source, inst.Size, len(data), data)
+			}
+			if got := inst.Assembly(); got != source {
+				t.Errorf("mismatch\n want: %q\n  got: %q\nbytes: % X", source, got, data)
+			}
+		})
+	}
+}
+
+// TestFPUFloatImmediateRoundTrip checks the Single/Double/Extended
+// floating-point immediate literal path specifically, since it does its
+// own IEEE-754/extended-precision decoding (decodeFPFloatImmediate in
+// internal/decoders/fpu.go) rather than reusing the integer <ea> decoder.
+func TestFPUFloatImmediateRoundTrip(t *testing.T) {
+	testCases := []string{
+		"FMOVE.S #1.5, FP0",
+		"FMOVE.D #1.5, FP0",
+		"FMOVE.X #1.5, FP0",
+		"FMOVE.X #-2.5, FP0",
+	}
+
+	for _, source := range testCases {
+		t.Run(source, func(t *testing.T) {
+			data, err := m68kasm.AssembleStringWithOptions(source, fpuTarget)
+			if err != nil {
+				t.Fatalf("assembler error for %q: %v", source, err)
+			}
+
+			inst, err := DecodeWithOptions(data, 0, DecodeOptions{CPU: M68020, FPU: true})
+			if err != nil {
+				t.Fatalf("decode error for %q (bytes % X): %v", source, data, err)
+			}
+			if int(inst.Size) != len(data) {
+				t.Errorf("%q: decoded size %d, assembled %d bytes (% X)", source, inst.Size, len(data), data)
+			}
+			t.Logf("%q -> %q (bytes % X)", source, inst.Assembly(), data)
+		})
+	}
+}
+
+// TestFPUWithoutOptIn confirms F-line opcodes still fall through to the
+// unknown-opcode DC.W path when the caller does not opt in via
+// DecodeOptions.FPU, preserving today's behavior by default.
+func TestFPUWithoutOptIn(t *testing.T) {
+	data, err := m68kasm.AssembleStringWithOptions("FADD.X FP1, FP0", fpuTarget)
+	if err != nil {
+		t.Fatalf("assembler error: %v", err)
+	}
+
+	inst, err := DecodeWithOptions(data, 0, DecodeOptions{CPU: M68020})
+	if err != nil {
+		t.Fatalf("decode error: %v", err)
+	}
+	if inst.Mnemonic != "DC.W" {
+		t.Fatalf("expected FADD to be unrecognized without FPU: true, got %q", inst.Assembly())
+	}
+}

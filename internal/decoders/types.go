@@ -41,6 +41,8 @@ const (
 	RegisterKindData    RegisterKind = "data"
 	RegisterKindAddress RegisterKind = "address"
 	RegisterKindPC      RegisterKind = "pc"
+	// RegisterKindFP identifies an FPU data register (FP0-FP7).
+	RegisterKindFP RegisterKind = "fp"
 )
 
 type Register struct {
@@ -52,6 +54,11 @@ type ImmediateValue struct {
 	Value  uint32
 	Signed int32
 	Size   uint8
+	// RawBytes holds the big-endian encoded bytes for immediates wider than
+	// 32 bits (Size > 4) that Value/Signed cannot represent — the FPU's
+	// double (8 bytes) and extended/packed-BCD (12 bytes) immediate
+	// formats. Nil whenever Size <= 4, where Value/Signed are authoritative.
+	RawBytes []byte
 }
 
 type EffectiveAddressKind string
@@ -155,6 +162,7 @@ func cloneOperand(operand Operand) Operand {
 	}
 	if operand.Immediate != nil {
 		imm := *operand.Immediate
+		imm.RawBytes = append([]byte(nil), operand.Immediate.RawBytes...)
 		cloned.Immediate = &imm
 	}
 	if operand.EffectiveAddress != nil {
@@ -177,6 +185,7 @@ func cloneOperand(operand Operand) Operand {
 		}
 		if operand.EffectiveAddress.Immediate != nil {
 			imm := *operand.EffectiveAddress.Immediate
+			imm.RawBytes = append([]byte(nil), operand.EffectiveAddress.Immediate.RawBytes...)
 			ea.Immediate = &imm
 		}
 		if operand.EffectiveAddress.Index != nil {

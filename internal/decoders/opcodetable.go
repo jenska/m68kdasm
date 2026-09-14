@@ -160,6 +160,17 @@ const (
 	valSUBXMemW = 0x9148
 	valSUBXMemL = 0x9188
 
+	// FPU "general instruction" family (68881/68882/68040/68060 built-in
+	// FPU): word1 is 0xF200 with the <ea> mode/reg in bits 5-0 (unused,
+	// left 0, for the register-to-register form). See fpu.go for the full
+	// bit-layout derivation, cross-checked against github.com/jenska/
+	// m68kasm's verified encoder rather than recalled from memory.
+	valFPGeneric = 0xF200
+	// valFNOP is FPU no-op: mode field 010 (vs. valFPGeneric's 000), fully
+	// fixed, always followed by a zero extension word — not part of the
+	// valFPGeneric family despite the superficially similar 0xF2xx shape.
+	valFNOP = 0xF280
+
 	valBFTST  = 0xE0C0
 	valBFEXTU = 0xE1C0
 	valBFCHG  = 0xE2C0
@@ -180,6 +191,13 @@ type OpcodePattern struct {
 	Value   uint16        // Expected value after masking
 	Decoder OpcodeDecoder // Decoder function
 	CPUs    cpuSet        // CPUs this pattern is valid on
+	// RequiresFPU marks a pattern that only decodes when the caller opts in
+	// via DecodeOptions.FPU. FPU presence is an attached-coprocessor
+	// question independent of the integer CPU tier (a bare 68020 with an
+	// external 68881 and a 68040's built-in FPU both just need FPU: true),
+	// so this is orthogonal to CPUs rather than folded into cpuSet — see
+	// docs/design-fpu-mmu.md's "Coprocessor availability model".
+	RequiresFPU bool
 }
 
 func exact(value uint16, decoder OpcodeDecoder) OpcodePattern {
@@ -198,6 +216,17 @@ func exactCPU(value uint16, decoder OpcodeDecoder, cpus cpuSet) OpcodePattern {
 
 func maskedCPU(mask, value uint16, decoder OpcodeDecoder, cpus cpuSet) OpcodePattern {
 	return OpcodePattern{Mask: mask, Value: value, Decoder: decoder, CPUs: cpus}
+}
+
+// fpuExact and fpuMasked declare patterns for FPU coprocessor opcodes: valid
+// on any base CPU tier (CPUs: cpuAll) but gated by RequiresFPU, so they only
+// decode when the caller passes DecodeOptions.FPU: true.
+func fpuExact(value uint16, decoder OpcodeDecoder) OpcodePattern {
+	return OpcodePattern{Mask: maskFFFF, Value: value, Decoder: decoder, CPUs: cpuAll, RequiresFPU: true}
+}
+
+func fpuMasked(mask, value uint16, decoder OpcodeDecoder) OpcodePattern {
+	return OpcodePattern{Mask: mask, Value: value, Decoder: decoder, CPUs: cpuAll, RequiresFPU: true}
 }
 
 // opcodeBuckets is a top-level jump table keyed by the opcode's high nibble.
@@ -344,20 +373,38 @@ var opcodeBuckets = [16][]OpcodePattern{
 		maskedCPU(maskFFC0, valBFINS, decodeBFINS, cpu020up),
 		masked(maskF000, valSHIFT, decodeShiftRotate), // All ASL/ASR/LSL/LSR/ROL/ROR/ROXL/ROXR
 	},
+	0xF: {
+		// valFNOP must precede valFPGeneric: both are OpcodePattern matches
+		// keyed on the top 10 bits, but FNOP's exact pattern (maskFFFF) is
+		// strictly narrower than valFPGeneric's maskFFC0 and the two never
+		// actually overlap (mode field 010 vs 000 — see the constants'
+		// comments), so this ordering is documentation, not a correctness
+		// requirement, unlike most other "must precede" notes in this file.
+		fpuExact(valFNOP, decodeFNOP),
+		fpuMasked(maskFFC0, valFPGeneric, decodeFPGeneric),
+	},
 }
 
 // OpcodeTable is the canonical ordered pattern table used by tests and tooling.
 var OpcodeTable = flattenOpcodeBuckets()
 
 // FindDecoder uses the opcode's high nibble as a jump-table index, then matches
-// only against the patterns that can exist in that 4K region of the opcode space
-// and are valid on the given target CPU.
-func FindDecoder(opcode uint16, cpu CPU) OpcodeDecoder {
+// only against the patterns that can exist in that 4K region of the opcode space,
+// are valid on the given target CPU, and (for coprocessor patterns) are enabled
+// by the fpu capability flag.
+func FindDecoder(opcode uint16, cpu CPU, fpu bool) OpcodeDecoder {
 	bit := cpuBit(cpu)
 	for _, pattern := range opcodeBuckets[opcode>>12] {
-		if (opcode&pattern.Mask) == pattern.Value && pattern.CPUs&bit != 0 {
-			return pattern.Decoder
+		if (opcode & pattern.Mask) != pattern.Value {
+			continue
 		}
+		if pattern.CPUs&bit == 0 {
+			continue
+		}
+		if pattern.RequiresFPU && !fpu {
+			continue
+		}
+		return pattern.Decoder
 	}
 	return nil
 }
