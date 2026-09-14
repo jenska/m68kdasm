@@ -12,7 +12,8 @@ import (
 // the 68040/68060's built-in FPU, which is opcode-compatible for this
 // subset) — FMOVE, FADD, FSUB, FMUL, FDIV, FCMP, FABS, FNEG, FSQRT, FTST,
 // FNOP, FMOVEM (FPn register-list save/restore), the full transcendental
-// function set (FSIN, FCOS, FLOGN, ...), FMOVECR (ROM constant load), and
+// function set (FSIN, FCOS, FLOGN, ...), the math-extensions bucket
+// (FGETEXP, FGETMAN, FSCALE, FMOD, FREM), FMOVECR (ROM constant load), and
 // FSINCOS (the one FPU instruction with two destination registers) — and
 // the FPU's own conditional branch/set/trap family, FBcc/FDBcc/FScc/
 // FTRAPcc (a distinct 32-condition space from the integer ISA's 16). It
@@ -20,9 +21,9 @@ import (
 // deliberately matching the scope of github.com/jenska/m68kasm's own
 // equivalent milestones (internal/asm/instructions/cpu020_fpu.go,
 // cpu020_fpu_movem.go, cpu020_fpu_cond.go, cpu020_fpu_trans.go,
-// cpu020_fpu_sincos.go) — FSAVE/FRESTORE, FMOVEM's FPCR/FPSR/FPIAR
-// control-register-list form, the FGETEXP/FGETMAN/FSCALE/FMOD/FREM
-// math-extension bucket, and packed-BCD store (k-factor) are follow-ups,
+// cpu020_fpu_mathext.go, cpu020_fpu_sincos.go) — FSAVE/FRESTORE, FMOVEM's
+// FPCR/FPSR/FPIAR control-register-list form, and packed-BCD store
+// (k-factor) are follow-ups,
 // not implemented here.
 //
 // Every bit position below was read from m68kasm v1.5.0's verified encoder
@@ -130,6 +131,19 @@ var fpGeneralOps = map[uint16]fpOpInfo{
 	0x16: {"FLOG2", true, false},
 	0x11: {"FTWOTOX", true, false},
 	0x12: {"FTENTOX", true, false},
+
+	// "Math extensions" — FGETEXP/FGETMAN are monadic (same shape as the
+	// transcendental set above); FSCALE/FMOD/FREM are genuinely binary
+	// (two FPn operands, e.g. "FSCALE FPm,FPn" scales FPn by FPm — the
+	// same {hasDst: true, canStore: false} shape FADD/FSUB/etc. already
+	// use, not FABS's). Also gated by DecodeOptions.FPU rather than a
+	// separate "full FPU" flag, same reasoning as the transcendental set.
+	// opBase values copied verbatim from m68kasm's cpu020_fpu_mathext.go.
+	0x1E: {"FGETEXP", true, false},
+	0x1F: {"FGETMAN", true, false},
+	0x26: {"FSCALE", true, false},
+	0x21: {"FMOD", true, false},
+	0x25: {"FREM", true, false},
 }
 
 // fpConditions names the FPU's 32 condition codes, indexed by condition

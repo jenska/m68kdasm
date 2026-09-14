@@ -138,6 +138,43 @@ func TestFPUTranscendentalRoundTrip(t *testing.T) {
 	}
 }
 
+// TestFPUMathExtRoundTrip covers the FPU's "math extensions" bucket:
+// FGETEXP/FGETMAN (monadic, same shape as FABS) and FSCALE/FMOD/FREM
+// (genuinely binary, same shape as FADD) — see their fpGeneralOps entries
+// in internal/decoders/fpu.go.
+func TestFPUMathExtRoundTrip(t *testing.T) {
+	testCases := []string{
+		"FGETEXP.X FP1, FP0",
+		"FGETEXP.L (A0), FP0",
+		"FGETMAN.X FP1, FP0",
+		"FGETMAN.L (A0), FP0",
+		"FSCALE.X FP1, FP0",
+		"FSCALE.L (A0), FP0",
+		"FMOD.X FP1, FP0",
+		"FMOD.L (A0), FP0",
+		"FREM.X FP1, FP0",
+		"FREM.L (A0), FP0",
+	}
+	for _, source := range testCases {
+		t.Run(source, func(t *testing.T) {
+			data, err := m68kasm.AssembleStringWithOptions(source, fpuFullTarget)
+			if err != nil {
+				t.Fatalf("assembler error for %q: %v", source, err)
+			}
+			inst, err := DecodeWithOptions(data, 0, DecodeOptions{CPU: M68020, FPU: true})
+			if err != nil {
+				t.Fatalf("decode error for %q (bytes % X): %v", source, data, err)
+			}
+			if int(inst.Size) != len(data) {
+				t.Errorf("%q: decoded size %d, assembled %d bytes (% X)", source, inst.Size, len(data), data)
+			}
+			if got := inst.Assembly(); got != source {
+				t.Errorf("mismatch\n want: %q\n  got: %q\nbytes: % X", source, got, data)
+			}
+		})
+	}
+}
+
 // TestFPUMOVECRRoundTrip covers FMOVECR (ROM constant load) — see
 // decodeFMOVECR in internal/decoders/fpu.go.
 func TestFPUMOVECRRoundTrip(t *testing.T) {

@@ -258,9 +258,8 @@ code is verified against the datasheet.
    `fpGeneralOps`, no new decode logic. Gated by the same `DecodeOptions.FPU` flag as everything else,
    not a separate "full FPU" capability (m68kasm's `FeatFPUFull` encoder-side distinction between a
    discrete 68881/68882 and a reduced/integrated FPU isn't disassembler-visible — the opcode decodes
-   identically either way). **Not done** from the original scope of this step: `FGETEXP`/`FGETMAN`/
-   `FSCALE`/`FMOD`/`FREM` (the separate "math extensions" bucket, genuinely binary not monadic for
-   `FSCALE`/`FMOD`/`FREM`) — see m68kasm's `cpu020_fpu_mathext.go`, still open.
+   identically either way). The "math extensions" bucket (`FGETEXP`/`FGETMAN`/`FSCALE`/`FMOD`/`FREM`)
+   originally deferred out of this step landed separately — see step 6.6 below.
 6.5. ~~**FMOVECR and FSINCOS**~~ — done: `FMOVECR #<romIndex>,FPn` (word2's top 6 bits, `0xFC00` mask /
    `0x5C00` value, distinguish it from the general arithmetic family — its format-code field would
    otherwise read as the reserved value 7) and `FSINCOS <ea>,FPc:FPs` / `FPm,FPc:FPs` (the one FPU
@@ -271,6 +270,11 @@ code is verified against the datasheet.
    field, not fixed opcode bits — any FSINCOS with a nonzero cosine register failed to decode at all
    until narrowed to the actual fixed selector, bits 6-3 (`0x78` mask). Caught by
    `TestFPUSINCOSRoundTrip` (fpu_test.go) before merging, not after.
+6.6. ~~**Math extensions**~~ — done: `FGETEXP`/`FGETMAN` (monadic, same shape as `FABS`/`FNEG`/`FSQRT`)
+   and `FSCALE`/`FMOD`/`FREM` (genuinely binary — two FPn operands, same `{hasDst: true, canStore:
+   false}` shape `FADD`/`FSUB` already use, not `FABS`'s). All five were pure `fpGeneralOps` table
+   additions, no new decode logic, same as the transcendental set (step 6). opBase values from
+   m68kasm's `cpu020_fpu_mathext.go`.
 7. ~~**FP condition/branch PR**~~ — done: `FBcc` (word/long displacement), `FDBcc`, `FScc`, `FTRAPcc`
    (bare/word/long), with the 32-entry (5-bit, not 6 as this doc originally guessed before the real
    condition table was read from m68kasm) FP condition table. Implementing this surfaced and fixed a
