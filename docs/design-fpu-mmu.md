@@ -4,9 +4,9 @@
 
 **FPU: implemented** (delivery-sequence steps 1-8.5 below — the entire 68881/68882/68040/68060 FPU
 instruction set this doc scoped in, all 7 data formats, both directions). **PMMU: in progress**
-(`PMOVE`/`PMOVEFD`/`PFLUSHA` done; `PFLUSH`/`PLOAD`/`PTEST`, `BAD`/`BAC`, `PSAVE`/`PRESTORE`, 68040's
-own PMMU forms, and the `Pcc` condition family — steps 9-10 — remain). This was originally the "Step 8"
-follow-up flagged as future work in
+(`PMOVE`/`PMOVEFD`/`PFLUSHA`/`PFLUSH`/`PFLUSHS`/`PFLUSHR`/`PLOADR`/`PLOADW`/`PTESTR`/`PTESTW` done;
+`BAD`/`BAC`, `PSAVE`/`PRESTORE`, 68040's own PMMU forms, and the `Pcc` condition family — steps 9-10 —
+remain). This was originally the "Step 8" follow-up flagged as future work in
 [design-cpu-variants.md](design-cpu-variants.md), whose Non-goals section explicitly scoped FPU and
 PMMU decoding out: "a large, separate opcode space (cpGEN, F-line `1111`) and should be its own
 follow-up design once base-CPU gating exists." Base-CPU gating (the `CPU`/`cpuSet` machinery) existed
@@ -328,17 +328,24 @@ code is verified against the datasheet.
    renders as a `{...}` suffix appended directly to the destination `<ea>` text (GAS's own syntax,
    e.g. `FMOVE.P FP3,BUFFER{#-5}`), not a separate operand.
 9. **68851/68030 PMMU PR** — in progress. `PMOVE` (every register except `BAD0`-`BAD7`/`BAC0`-`BAC7`
-   — see below) and `PMOVEFD` done: `DecodeOptions.MMU` added (deferred from step 2 as planned, now that
-   real PMMU patterns exist to gate), `RequiresMMU` threaded through `FindDecoder` the same way
-   `RequiresFPU` already was, and `decodePMOVEFamily` (`internal/decoders/pmmu.go`) decoding `TC`, `DRP`,
-   `SRP`, `CRP`, `CAL`, `VAL`, `SCC`, `AC`, `PCSR`, `TT0`, `TT1`, `MMUSR` — 22 `PMOVE` forms plus 6
-   `PMOVEFD` forms, all verified against `m68kasm`'s encoder and passing round-trip on the first try
-   (no collision or bit-math surprise this time, unlike almost every FPU step). `PFLUSHA` done too,
-   sharing `PMOVE`/`PMOVEFD`'s bare `0xF000|<ea>` word1 shape the same way `FNOP` shares the FPU general
-   instruction family's word1 shape. Not yet done, each its own remaining sub-step:
-   - `PFLUSH`/`PFLUSHS`/`PFLUSHR`, `PLOADR`/`PLOADW`, `PTESTR`/`PTESTW` — share a new "function code
-     specifier" operand shape (`SFC`/`DFC`/a `Dn`/an immediate, a 2-bit mode + 3-bit value field) not
-     needed by anything decoded so far; `PTESTR`/`PTESTW` also have an optional 4th operand (`,An`).
+   — see below), `PMOVEFD`, and `PFLUSHA` done: `DecodeOptions.MMU` added (deferred from step 2 as
+   planned, now that real PMMU patterns exist to gate), `RequiresMMU` threaded through `FindDecoder` the
+   same way `RequiresFPU` already was, and `decodePMMUGeneral` (`internal/decoders/pmmu.go`) — the single
+   dispatch point for every PMMU instruction sharing the bare `0xF000|<ea>` word1 shape, the PMMU
+   analogue of `decodeFPGeneric`'s word2-based dispatch — decoding `TC`, `DRP`, `SRP`, `CRP`, `CAL`,
+   `VAL`, `SCC`, `AC`, `PCSR`, `TT0`, `TT1`, `MMUSR` (22 `PMOVE` forms plus 6 `PMOVEFD` forms), all
+   verified against `m68kasm`'s encoder and passing round-trip on the first try (no collision or
+   bit-math surprise this time, unlike almost every FPU step).
+   ~~`PFLUSH`/`PFLUSHS`/`PFLUSHR`, `PLOADR`/`PLOADW`, `PTESTR`/`PTESTW`~~ — also done: the new "function
+   code specifier" operand (`SFC`/`DFC`/a `Dn`/an immediate — a 2-bit mode + 3-bit value field at word2
+   bits 4-0, `fcSpecOperand` in `pmmu.go`), `PFLUSH`/`PFLUSHS`'s optional trailing `<ea>` (two word2
+   sub-variants each, distinguished by a class mask), and `PTESTR`/`PTESTW`'s optional trailing `An`
+   result register — rendered only when nonzero, since real hardware has no separate "An present" flag
+   distinct from the register value itself, so `PTESTR FC,<ea>,#level` and `...,#level,A0` are
+   bit-identical (an inherent ambiguity, not a decoder gap — m68kasm's own encoder produces the same
+   bytes for both spellings). All 19 test cases passed round-trip on the first try, including every
+   FC-spec spelling across every instruction family and both the omitted/explicit trailing-`An` cases.
+   Not yet done, each its own remaining sub-step:
    - `BAD0`-`BAD7`/`BAC0`-`BAC7` (breakpoint address/access registers) — a numbered-register-family
      shape (register number 0-7 at bits 4-2) distinct from every other `PMOVE` register decoded so far,
      *and* an inverted load/store direction bit relative to them (0x0200 set means load here, not

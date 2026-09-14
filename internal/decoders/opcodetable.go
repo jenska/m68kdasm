@@ -410,7 +410,7 @@ var opcodeBuckets = [16][]OpcodePattern{
 		// PMMU: word1 0xF000-0xF03F, disjoint from every FPU pattern below
 		// (all of which start at 0xF200+), so ordering relative to them
 		// doesn't matter.
-		mmuMasked(maskFFC0, valPMOVE, decodePMOVEFamily),
+		mmuMasked(maskFFC0, valPMOVE, decodePMMUGeneral),
 
 		// valFDBcc and the three valFTRAPcc literals must precede valFScc:
 		// each occupies a specific EA sub-slot (address-register-direct for

@@ -73,6 +73,56 @@ func TestPMOVERoundTrip(t *testing.T) {
 	}
 }
 
+// TestPFlushLoadTestRoundTrip covers PFLUSH/PFLUSHS/PFLUSHR, PLOADR/
+// PLOADW, and PTESTR/PTESTW — the PMMU cache/TLB management instructions,
+// all sharing the new "function code specifier" operand shape (SFC/DFC, a
+// Dn, or #<imm>) — see decodePFLUSH/decodePLOAD/decodePTEST in
+// internal/decoders/pmmu.go.
+func TestPFlushLoadTestRoundTrip(t *testing.T) {
+	testCases := []string{
+		"PFLUSH SFC, #0",
+		"PFLUSH DFC, #31",
+		"PFLUSH D3, #5",
+		"PFLUSH #6, #5",
+		"PFLUSHS SFC, #0",
+		"PFLUSH SFC, #0, (A0)",
+		"PFLUSHS DFC, #12, (A0)",
+		"PFLUSHR (A0)",
+
+		"PLOADR SFC, (A0)",
+		"PLOADR D2, (A0)",
+		"PLOADR #3, (A0)",
+		"PLOADW DFC, (A0)",
+
+		"PTESTR SFC, (A0), #0",
+		"PTESTR DFC, (A0), #7",
+		"PTESTR D1, (A0), #3",
+		"PTESTR #2, (A0), #3",
+		"PTESTR SFC, (A0), #3, A5",
+		"PTESTW SFC, (A0), #4",
+		"PTESTW SFC, (A0), #4, A2",
+	}
+
+	for _, source := range testCases {
+		t.Run(source, func(t *testing.T) {
+			data, err := m68kasm.AssembleStringWithOptions(source, pmmuTarget)
+			if err != nil {
+				t.Fatalf("assembler error for %q: %v", source, err)
+			}
+			inst, err := DecodeWithOptions(data, 0, DecodeOptions{CPU: M68020, MMU: true})
+			if err != nil {
+				t.Fatalf("decode error for %q (bytes % X): %v", source, data, err)
+			}
+			if int(inst.Size) != len(data) {
+				t.Errorf("%q: decoded size %d, assembled %d bytes (% X)", source, inst.Size, len(data), data)
+			}
+			if got := inst.Assembly(); got != source {
+				t.Errorf("mismatch\n want: %q\n  got: %q\nbytes: % X", source, got, data)
+			}
+		})
+	}
+}
+
 // TestPMMUWithoutOptIn confirms PMMU F-line opcodes still fall through to
 // the unknown-opcode DC.W path when the caller does not opt in via
 // DecodeOptions.MMU, preserving today's behavior by default.
