@@ -45,7 +45,7 @@ requires the original bytes, and requires every opcode the CPU has to decode.
 ### Changed
 - Absolute short addresses render with their size, `$1234.W`, so the text
   reassembles to the same bytes
-- Bumped the `github.com/jenska/m68kasm` test dependency to v1.6
+- Bumped the `github.com/jenska/m68kasm` test dependency to v1.6.1
 
 ## [1.3.0] - 2026-09-14
 
