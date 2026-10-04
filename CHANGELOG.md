@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.4.0] - 2026-10-04
+
 The disassembler now matches m68kasm v1.6: a new round-trip test decodes
 every opcode word (and, for instructions selected by an extension word,
 every extension word) on each CPU, assembles the text back with m68kasm and
