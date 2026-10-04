@@ -71,6 +71,9 @@ func decodePDBcc(data []byte, opcode uint16, inst *Instruction, cpu CPU) error {
 		return err
 	}
 	word2 := binary.BigEndian.Uint16(data[2:4])
+	if word2&0xFFF0 != 0 {
+		return ErrInvalidEncoding // the PMMU has 16 conditions; the rest of the word is reserved
+	}
 	cc := word2 & 0xF
 	mnemonic := "PDB" + pmmuConditionName(cc)
 	reg := uint8(opcode & 0x7)
@@ -93,6 +96,9 @@ func decodePScc(data []byte, opcode uint16, inst *Instruction, cpu CPU) error {
 		return err
 	}
 	word2 := binary.BigEndian.Uint16(data[2:4])
+	if word2&0xFFF0 != 0 {
+		return ErrInvalidEncoding // the PMMU has 16 conditions; the rest of the word is reserved
+	}
 	cc := word2 & 0xF
 	mnemonic := "PS" + pmmuConditionName(cc)
 	mode := uint8((opcode >> 3) & 0x7)
@@ -125,6 +131,9 @@ func decodePTRAPcc(data []byte, inst *Instruction, immSize int) error {
 		return err
 	}
 	word2 := binary.BigEndian.Uint16(data[2:4])
+	if word2&0xFFF0 != 0 {
+		return ErrInvalidEncoding // the PMMU has 16 conditions; the rest of the word is reserved
+	}
 	mnemonic := "PTRAP" + pmmuConditionName(word2&0xF)
 
 	switch immSize {

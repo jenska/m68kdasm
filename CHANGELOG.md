@@ -5,6 +5,48 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+The disassembler now matches m68kasm v1.6: a new round-trip test decodes
+every opcode word (and, for instructions selected by an extension word,
+every extension word) on each CPU, assembles the text back with m68kasm and
+requires the original bytes, and requires every opcode the CPU has to decode.
+
+### Added
+- Opcode validity per CPU from the Motorola operation code map: an encoding
+  the CPU does not have — an addressing mode the instruction cannot take, a
+  reserved field that is set, an unknown coprocessor command — renders as
+  `DC.W` instead of a bogus instruction or a decode error.
+- `BTST`/`BCHG`/`BCLR`/`BSET Dn,<ea>` for every data register (only `D2`
+  decoded), `MOVE USP`, `BKPT`, `MOVE` to/from `SR`/`CCR`, `ORI`/`ANDI`/
+  `EORI` to `CCR`/`SR`, `CAS2`, `DIVUL`/`DIVSL`, `MOVEC` `BUSCR`
+- `RegisterKindSR`, `RegisterKindCCR` and `RegisterKindUSP`
+
+### Fixed
+- Register shifts and rotates decoded the operation from the wrong bits
+  (`LSL` showed as `ASL`, rotates as shifts) and memory shifts from the
+  register-form fields
+- Bit fields were registered on the memory-shift opcodes (`E0C0`) instead
+  of `E8C0`-`EFC0`, and read a register offset from bits 10-8 instead of 8-6
+- `ANDI`/`ORI`/`EORI`/`CMPI.L` read a one-word immediate
+- `CMPA.L` decoded as `CMPM`
+- `MOVES` had its direction reversed
+- `MULx.L`/`DIVx.L` read the sign from bit 15 and swapped Dl/Dq with Dh/Dr
+- `CAS` read Dc/Du from the wrong bits; `CHK2`/`CMP2` read the register
+  word after the operand's extension instead of right after the opcode
+- `TRAPcc` showed no `.W`/`.L` size and claimed `Scc`'s absolute-address
+  slots
+- `CALLM`/`RTM` decode only on the 68020; the coprocessor-interface PMMU
+  (`F0xx`) only on the 68020/68030, where the 68851 and the on-chip PMMU
+  exist
+- CPU32 decodes the 68020-era instructions it has: `CHK2`/`CMP2`, `EXTB`,
+  `TRAPcc`, `CHK.L`, `LINK.L` and the long multiply/divide
+
+### Changed
+- Absolute short addresses render with their size, `$1234.W`, so the text
+  reassembles to the same bytes
+- Bumped the `github.com/jenska/m68kasm` test dependency to v1.6
+
 ## [1.3.0] - 2026-09-14
 
 ### Added

@@ -285,9 +285,12 @@ func decodeInstruction(initial []byte, address uint32, reader addressReader, opt
 			return finalizeInstruction(decoderInst, opts), nil
 		}
 
+		// Anything but a request for more bytes means the bytes are not an
+		// instruction of this CPU (a reserved field, an operand it cannot
+		// take, an unknown coprocessor command): render the word as DC.W.
 		var needMore *decoders.NeedMoreError
 		if !errors.As(err, &needMore) {
-			return nil, err
+			return finalizeInstruction(decoders.DecodeUnknown(data, address, opcode), opts), nil
 		}
 
 		requiredLen := len(data) + needMore.Missing

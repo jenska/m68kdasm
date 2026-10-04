@@ -45,13 +45,32 @@ func decodeImmediateBinaryOp(mnemonic string, data []byte, opcode uint16, inst *
 	if err != nil {
 		return err
 	}
+	if sizeStr == "B" && immediate > 0xFF {
+		return ErrInvalidEncoding // a byte immediate's upper byte is reserved
+	}
+	opSize := map[string]int{"B": 1, "W": 2, "L": 4}[sizeStr]
+
+	// ORI/ANDI/EORI #<data>,CCR and #<data>,SR take the immediate mode slot.
+	if dstMode == 7 && dstReg == 4 {
+		target := map[string]string{"B": "CCR", "W": "SR"}[sizeStr]
+		if target == "" {
+			return ErrInvalidEncoding
+		}
+		immText := fmt.Sprintf("#%s", formatImmediate(immediate, opSize))
+		kind := RegisterKindCCR
+		if target == "SR" {
+			kind = RegisterKindSR
+		}
+		setInstruction(data, inst, offset, mnemonic, fmt.Sprintf("%s, %s", immText, target), immediateOperand(immText, immediate, opSize), registerOperand(kind, 0))
+		return nil
+	}
 
 	dstOperand, offset, dstMeta, err := decodeEA(data, inst.Address, offset, dstMode, dstReg, cpu)
 	if err != nil {
 		return err
 	}
 
-	immText := fmt.Sprintf("#%s", formatImmediate(immediate, immSize))
+	immText := fmt.Sprintf("#%s", formatImmediate(immediate, opSize))
 	setInstruction(data, inst, offset, fmt.Sprintf("%s.%s", mnemonic, sizeStr), fmt.Sprintf("%s, %s", immText, dstOperand), immediateOperand(immText, immediate, immSize), dstMeta)
 	return nil
 }

@@ -258,7 +258,7 @@ func TestLabelsJSR(t *testing.T) {
 		if err != nil {
 			t.Fatalf("DisassembleRangeWithOptions: %v", err)
 		}
-		if instrs[0].Assembly() != "JSR $2000" {
+		if instrs[0].Assembly() != "JSR $2000.W" {
 			t.Errorf("expected raw hex for an out-of-range JSR target, got %q", instrs[0].Assembly())
 		}
 	})

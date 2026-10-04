@@ -30,10 +30,13 @@ const (
 	cpu040
 	cpu060
 
-	cpuAll     = cpu000 | cpu010 | cpu32 | cpu020 | cpu030 | cpu040 | cpu060
-	cpu010up   = cpu010 | cpu32 | cpu020 | cpu030 | cpu040 | cpu060 // 68010 and later, not plain 68000
-	cpu020up   = cpu020 | cpu030 | cpu040 | cpu060
-	cpu020_030 = cpu020 | cpu030 // e.g. CALLM/RTM, removed starting with 68040
+	cpuAll   = cpu000 | cpu010 | cpu32 | cpu020 | cpu030 | cpu040 | cpu060
+	cpu010up = cpu010 | cpu32 | cpu020 | cpu030 | cpu040 | cpu060 // 68010 and later, not plain 68000
+	cpu020up = cpu020 | cpu030 | cpu040 | cpu060
+	// cpu32up is the 68020-era subset CPU32 shares with the 68020+: long
+	// branches, CHK2/CMP2, EXTB, TRAPcc, CHK.L, LINK.L and the long MUL/DIV.
+	cpu32up    = cpu32 | cpu020up
+	cpu020_030 = cpu020 | cpu030 // the coprocessor-interface PMMU (68851, 68030)
 	cpu040up   = cpu040 | cpu060 // e.g. the 68040's single-word PMMU forms (PFLUSHA/PFLUSHAN/PFLUSHN/PFLUSH)
 )
 

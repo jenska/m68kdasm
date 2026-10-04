@@ -43,6 +43,11 @@ const (
 	RegisterKindPC      RegisterKind = "pc"
 	// RegisterKindFP identifies an FPU data register (FP0-FP7).
 	RegisterKindFP RegisterKind = "fp"
+	// RegisterKindSR, RegisterKindCCR and RegisterKindUSP identify the status
+	// register, the condition code register and the user stack pointer.
+	RegisterKindSR  RegisterKind = "sr"
+	RegisterKindCCR RegisterKind = "ccr"
+	RegisterKindUSP RegisterKind = "usp"
 )
 
 type Register struct {

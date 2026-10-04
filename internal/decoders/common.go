@@ -2,10 +2,17 @@ package decoders
 
 import (
 	"encoding/binary"
+	"errors"
 	"fmt"
+	"strings"
 )
 
 var sizeNames = [...]string{"B", "W", "L", "?"}
+
+// ErrInvalidEncoding reports that the bytes are not an instruction the
+// selected CPU has — a reserved field is set or an operand is not allowed —
+// so the caller renders the opcode word as DC.W instead.
+var ErrInvalidEncoding = errors.New("invalid instruction encoding")
 
 // DecodeUnknown builds the "DC.W" pseudo-instruction used when no decoder
 // matches the opcode.
@@ -208,8 +215,13 @@ func collectExtensionWords(data []byte) []uint16 {
 }
 
 func registerOperand(kind RegisterKind, number uint8) Operand {
+	text := fmt.Sprintf("%s%d", registerPrefix(kind), number)
+	switch kind {
+	case RegisterKindSR, RegisterKindCCR, RegisterKindUSP:
+		text = strings.ToUpper(string(kind)) // a single, unnumbered register
+	}
 	return Operand{
-		Text: fmt.Sprintf("%s%d", registerPrefix(kind), number),
+		Text: text,
 		Kind: OperandKindRegister,
 		Register: &Register{
 			Kind:   kind,

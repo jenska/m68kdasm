@@ -9,7 +9,8 @@ A Go disassembler for the Motorola 68000 family (68000, 68010, CPU32, 68020, 680
 - Fast opcode dispatch using a hierarchical jump table, gated per target CPU.
 - Full 68000 instruction coverage (every mnemonic in the standard 68000 opcode map), plus branches, arithmetic, logic, shifts, and BCD.
 - Full 68000 addressing-mode decoding, including PC-relative and immediate forms, plus the 68020+ full extension word (memory indirect, scaled/suppressed index, 0/16/32-bit base and outer displacements).
-- CPU-variant opcode support: `MOVEC`/`MOVES`/`RTD` (68010+), `BGND` (CPU32), and 68020+ additions — `BFxxx` bitfield ops, `CAS`, `CHK2`/`CMP2`, 32×32 `MULU.L`/`MULS.L`/`DIVU.L`/`DIVS.L`, `PACK`/`UNPK`, `CALLM`/`RTM` (68020/68030 only), `TRAPcc`, `LINK.L`, `EXTB.L`, `CHK.L`.
+- CPU-variant opcode support: `MOVEC`/`MOVES`/`RTD` (68010+), `BGND` (CPU32), and 68020+ additions — `BFxxx` bitfield ops, `CAS`, `CHK2`/`CMP2`, 32×32 `MULU.L`/`MULS.L`/`DIVU.L`/`DIVS.L`/`DIVUL.L`/`DIVSL.L`, `CAS2`, `PACK`/`UNPK`, `CALLM`/`RTM` (68020 only), `TRAPcc`, `LINK.L`, `EXTB.L`, `CHK.L`; `BKPT` and `MOVE CCR,<ea>` (68010+).
+- Matches [m68kasm](https://github.com/jenska/m68kasm): every decoded instruction assembles back to its own bytes, and every opcode a CPU has decodes — both checked by a round-trip test over all opcode words. Encodings a CPU does not have (an operand it cannot take, a set reserved bit) render as `DC.W`.
 - Optional FPU decoding (68881/68882, or the 68040/68060's built-in FPU): the full `FMOVE`/`FADD`/`FSUB`/`FMUL`/`FDIV`/`FCMP`/`FABS`/`FNEG`/`FSQRT`/`FTST` family in all 7 data formats (including packed BCD with k-factor), `FMOVEM` (both the `FPn` and `FPCR`/`FPSR`/`FPIAR` register-list forms), the transcendental and math-extension function sets, `FMOVECR`, `FSINCOS`, the `FBcc`/`FDBcc`/`FScc`/`FTRAPcc` condition family, and `FSAVE`/`FRESTORE`.
 - Optional PMMU decoding (68851, or the 68030's built-in PMMU): `PMOVE`'s full register set, `PMOVEFD`, `PFLUSHA`/`PFLUSH`/`PFLUSHS`/`PFLUSHR`, `PLOADR`/`PLOADW`, `PTESTR`/`PTESTW`, `PSAVE`/`PRESTORE`, the `PBcc`/`PDBcc`/`PScc`/`PTRAPcc` condition family, and the 68040's own simplified single-word PMMU forms.
 - Optional auto-generated labels for branch/call targets within a disassembled range (`BRA l00001010` plus a matching `Instruction.Label`), with a caller-supplied `Symbolizer` name always taking precedence over a synthetic one.
@@ -32,7 +33,7 @@ inst, err := m68kdasm.DecodeWithOptions(data, address, m68kdasm.DecodeOptions{
 })
 ```
 
-Available values: `M68000`, `M68010`, `CPU32`, `M68020`, `M68030`, `M68040`, `M68060`. Opcode availability isn't a strict "newer implies older" chain — CPU32 is a 68010-derived core with its own additions and a reduced 68020-style addressing mode, and `CALLM`/`RTM` are valid on 68020/68030 but were removed starting with the 68040 — so each opcode is tagged with the exact set of CPUs it decodes on rather than a minimum version.
+Available values: `M68000`, `M68010`, `CPU32`, `M68020`, `M68030`, `M68040`, `M68060`. Opcode availability isn't a strict "newer implies older" chain — CPU32 is a 68010-derived core with its own additions and a reduced 68020-style addressing mode, and `CALLM`/`RTM` exist only on the 68020 — so each opcode is tagged with the exact set of CPUs it decodes on rather than a minimum version.
 
 Not yet implemented: `CAS2`, CPU32's `TBLS`/`TBLU` table-lookup family, and the 68040-specific `MOVE16`/`CINV`/`CPUSH`. See [docs/design-cpu-variants.md](docs/design-cpu-variants.md) for the full design and rationale.
 

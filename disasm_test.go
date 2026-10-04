@@ -170,7 +170,7 @@ func TestDecodeAbsoluteShortAddressing(t *testing.T) {
 		t.Fatalf("Erwartete 1 Instruktion, erhielt %d", len(instrs))
 	}
 	got := instrs[0].Assembly()
-	want := "MOVE.W $1234, D1"
+	want := "MOVE.W $1234.W, D1"
 	if got != want {
 		t.Errorf("Mismatch!\nErwartet: '%s'\nErhalten: '%s'", want, got)
 	}

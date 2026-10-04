@@ -26,14 +26,16 @@ func getDirectionStr(direction uint16) string {
 	return "L"
 }
 
+// decodeShiftRotate decodes ASd/LSd/ROXd/ROd. Register form:
+// 1110 ccc d ss i tt rrr (count or count register ccc, direction d, size ss,
+// i set for a register count, type tt); memory form: 1110 0tt d 11 eeeeee
+// (one-bit shift of a memory word).
 func decodeShiftRotate(data []byte, opcode uint16, inst *Instruction, cpu CPU) error {
 	dirStr := getDirectionStr((opcode >> 8) & 0x1)
-	rotType := (opcode >> 9) & 0x7
 
-	if rotType <= 3 {
-		// Register form: shift a data register by an immediate or register count.
+	if (opcode>>6)&0x3 != 0x3 {
 		reg := uint8(opcode & 0x7)
-		mnemonic := fmt.Sprintf("%s%s.%s", getMnemonicBase(rotType), dirStr, getSizeString((opcode>>6)&0x3))
+		mnemonic := fmt.Sprintf("%s%s.%s", getMnemonicBase((opcode>>3)&0x3), dirStr, getSizeString((opcode>>6)&0x3))
 
 		var countStr string
 		var countMeta Operand
@@ -53,10 +55,9 @@ func decodeShiftRotate(data []byte, opcode uint16, inst *Instruction, cpu CPU) e
 		return nil
 	}
 
-	// Memory form: shift a memory word by one.
 	memMode := uint8((opcode >> 3) & 0x7)
 	memReg := uint8(opcode & 0x7)
-	mnemonic := fmt.Sprintf("%s%s.W", getMnemonicBase((opcode>>6)&0x3), dirStr)
+	mnemonic := fmt.Sprintf("%s%s.W", getMnemonicBase((opcode>>9)&0x3), dirStr)
 	operand, extraWords, meta, err := decodeAddressingMode(data[2:], memMode, memReg, 2, cpu)
 	if err != nil {
 		return err

@@ -7,11 +7,11 @@ import (
 
 func decodeCMP(data []byte, opcode uint16, inst *Instruction, cpu CPU) error {
 	opmode := (opcode >> 6) & 0x7
-	if (opcode & 0xF138) == 0xB108 {
-		return decodeCMPM(data, opcode, inst)
-	}
 	if opmode == 3 || opmode == 7 {
 		return decodeAddressRegisterOp("CMP", data, opcode, inst, cpu)
+	}
+	if opmode >= 4 && (opcode>>3)&0x7 == 1 {
+		return decodeCMPM(data, opcode, inst) // 1011 xxx1 ss 001 yyy
 	}
 	if opmode >= 4 && opmode <= 6 {
 		return decodeEOR(data, opcode, inst, cpu)
@@ -48,7 +48,7 @@ func decodeCMPM(data []byte, opcode uint16, inst *Instruction) error {
 }
 
 func decodeCMPI(data []byte, opcode uint16, inst *Instruction, cpu CPU) error {
-	return decodeImmediateBinaryOp("CMPI", data, opcode, inst, false, cpu)
+	return decodeImmediateBinaryOp("CMPI", data, opcode, inst, true, cpu)
 }
 
 // decodeCHK2CMP2 - Check/Compare Register Against Bounds (68020+).
@@ -65,15 +65,15 @@ func decodeCHK2CMP2(data []byte, opcode uint16, inst *Instruction, cpu CPU) erro
 	mode := uint8((opcode >> 3) & 0x7)
 	reg := uint8(opcode & 0x7)
 
-	boundsOperand, offset, boundsMeta, err := decodeEAWithSize(data, inst.Address, 2, mode, reg, sizeBytes, cpu)
-	if err != nil {
+	// The register word directly follows the opcode; the bounds <ea>'s own
+	// extension words come after it.
+	if err := requireLength(data, 4, "CHK2/CMP2 extension word"); err != nil {
 		return err
 	}
-
-	if err := requireLength(data, offset+2, "CHK2/CMP2 extension word"); err != nil {
-		return err
+	ext := binary.BigEndian.Uint16(data[2:4])
+	if ext&0x07FF != 0 {
+		return ErrInvalidEncoding // bits 10-0 are reserved
 	}
-	ext := binary.BigEndian.Uint16(data[offset : offset+2])
 	regKind := RegisterKindData
 	if ext&0x8000 != 0 {
 		regKind = RegisterKindAddress
@@ -83,17 +83,19 @@ func decodeCHK2CMP2(data []byte, opcode uint16, inst *Instruction, cpu CPU) erro
 		mnemonic = "CHK2"
 	}
 	regMeta := registerOperand(regKind, uint8((ext>>12)&0x7))
-	setInstruction(data, inst, offset+2, mnemonic+"."+sizeStr, fmt.Sprintf("%s, %s", boundsOperand, regMeta.Text), boundsMeta, regMeta)
+
+	boundsOperand, offset, boundsMeta, err := decodeEAWithSize(data, inst.Address, 4, mode, reg, sizeBytes, cpu)
+	if err != nil {
+		return err
+	}
+	setInstruction(data, inst, offset, mnemonic+"."+sizeStr, fmt.Sprintf("%s, %s", boundsOperand, regMeta.Text), boundsMeta, regMeta)
 	return nil
 }
 
-// decodeCAS - Compare and Swap (68020+, single-operand form only; CAS2 is
-// deliberately not implemented — its extension-word encoding packs two
-// independent register triples across two extension words and wasn't
-// confidently enough recalled to encode correctly without a primary-source
-// cross-check).
+// decodeCAS - Compare and Swap (68020+).
 // Format: 0000 1ss 011 mmm rrr (ss: 01=B,10=W,11=L), followed by an
-// extension word: bits5-3=Dc (compare register), bits2-0=Du (update register).
+// extension word 0000 000u uu00 0ccc: Du (update register) in bits 8-6, Dc
+// (compare register) in bits 2-0.
 func decodeCAS(data []byte, opcode uint16, inst *Instruction, cpu CPU) error {
 	var sizeStr string
 	var sizeBytes int
@@ -114,8 +116,11 @@ func decodeCAS(data []byte, opcode uint16, inst *Instruction, cpu CPU) error {
 		return err
 	}
 	ext := binary.BigEndian.Uint16(data[2:4])
-	dcMeta := registerOperand(RegisterKindData, uint8((ext>>3)&0x7))
-	duMeta := registerOperand(RegisterKindData, uint8(ext&0x7))
+	if ext&0xFE38 != 0 {
+		return ErrInvalidEncoding // only Du (bits 8-6) and Dc (bits 2-0) are defined
+	}
+	dcMeta := registerOperand(RegisterKindData, uint8(ext&0x7))
+	duMeta := registerOperand(RegisterKindData, uint8((ext>>6)&0x7))
 
 	eaOperand, offset, eaMeta, err := decodeEAWithSize(data, inst.Address, 4, mode, reg, sizeBytes, cpu)
 	if err != nil {
@@ -123,5 +128,36 @@ func decodeCAS(data []byte, opcode uint16, inst *Instruction, cpu CPU) error {
 	}
 
 	setInstruction(data, inst, offset, "CAS."+sizeStr, fmt.Sprintf("%s, %s, %s", dcMeta.Text, duMeta.Text, eaOperand), dcMeta, duMeta, eaMeta)
+	return nil
+}
+
+// decodeCAS2 - dual-operand Compare and Swap (68020+): 0000 1ss0 1111 1100
+// (ss: 10=W, 11=L) followed by two extension words, one per operand, each
+// D/A(15) Rn(14-12) 000 Du(8-6) 000 Dc(2-0).
+func decodeCAS2(data []byte, opcode uint16, inst *Instruction, cpu CPU) error {
+	if err := requireLength(data, 6, "CAS2 extension words"); err != nil {
+		return err
+	}
+	sizeStr := "W"
+	if opcode == 0x0EFC {
+		sizeStr = "L"
+	}
+	ext1 := binary.BigEndian.Uint16(data[2:4])
+	ext2 := binary.BigEndian.Uint16(data[4:6])
+	if ext1&0x0E38 != 0 || ext2&0x0E38 != 0 {
+		return ErrInvalidEncoding
+	}
+	pointer := func(ext uint16) Operand {
+		kind := RegisterKindData
+		if ext&0x8000 != 0 {
+			kind = RegisterKindAddress
+		}
+		return registerOperand(kind, uint8((ext>>12)&0x7))
+	}
+	dc1, dc2 := registerOperand(RegisterKindData, uint8(ext1&7)), registerOperand(RegisterKindData, uint8(ext2&7))
+	du1, du2 := registerOperand(RegisterKindData, uint8((ext1>>6)&7)), registerOperand(RegisterKindData, uint8((ext2>>6)&7))
+	rn1, rn2 := pointer(ext1), pointer(ext2)
+	operands := fmt.Sprintf("%s:%s, %s:%s, (%s):(%s)", dc1.Text, dc2.Text, du1.Text, du2.Text, rn1.Text, rn2.Text)
+	setInstruction(data, inst, 6, "CAS2."+sizeStr, operands, dc1, dc2, du1, du2, rn1, rn2)
 	return nil
 }

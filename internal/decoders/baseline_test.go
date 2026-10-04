@@ -263,7 +263,7 @@ func TestDecodeTRAPcc(t *testing.T) {
 	// TRAPEQ.W #$1234: cond=EQ(7), sss=010 -> 0101 0111 11111 010 = 0x57FA
 	data := []byte{0x57, 0xFA, 0x12, 0x34}
 	inst = decodeFor(t, data, M68020)
-	if inst.Mnemonic != "TRAPEQ" || inst.Operands != "#$1234" {
+	if inst.Mnemonic != "TRAPEQ.W" || inst.Operands != "#$1234" {
 		t.Fatalf("got %q %q", inst.Mnemonic, inst.Operands)
 	}
 	if inst.Size != 4 {

@@ -159,6 +159,9 @@ func decodePMMUGeneral(data []byte, opcode uint16, inst *Instruction, cpu CPU) e
 
 	switch {
 	case word2 == pmmuFlushAWord2:
+		if opcode&0x3F != 0 {
+			return ErrInvalidEncoding // PFLUSHA has no <ea>
+		}
 		setInstruction(data, inst, 4, "PFLUSHA", "")
 		return nil
 	case word2 == pflushrWord2:
@@ -186,6 +189,14 @@ func decodePMMUGeneral(data []byte, opcode uint16, inst *Instruction, cpu CPU) e
 	info, ok := pmmuMoveWord2[word2]
 	if !ok {
 		return fmt.Errorf("unknown PMMU coprocessor command word: $%04X", word2)
+	}
+	size := info.size
+	switch info.reg {
+	case "CRP", "SRP", "DRP":
+		size = 8 // the 64-bit root pointers
+	}
+	if !pmoveOperandValid(opcode, size, info.isStore) {
+		return ErrInvalidEncoding
 	}
 
 	mode := uint8((opcode >> 3) & 0x7)
@@ -230,6 +241,9 @@ func fcSpecOperand(v uint16) Operand {
 }
 
 func decodePFLUSH(data []byte, opcode uint16, inst *Instruction, cpu CPU, mnemonic string, word2 uint16, withEA bool) error {
+	if !fcSpecValid(word2&0x1F) || (withEA && !eaIn(opcode, eaControlAlt)) || (!withEA && opcode&0x3F != 0) {
+		return ErrInvalidEncoding
+	}
 	fc := fcSpecOperand(word2 & 0x1F)
 	mask := uint32((word2 >> 5) & 0x1F)
 	maskText := fmt.Sprintf("#%d", mask)
@@ -251,6 +265,9 @@ func decodePFLUSH(data []byte, opcode uint16, inst *Instruction, cpu CPU, mnemon
 }
 
 func decodePFLUSHR(data []byte, opcode uint16, inst *Instruction, cpu CPU) error {
+	if !eaIn(opcode, eaMemoryAlterable) {
+		return ErrInvalidEncoding // the 64-bit root pointer lives in memory
+	}
 	mode := uint8((opcode >> 3) & 0x7)
 	reg := uint8(opcode & 0x7)
 	eaText, offset, eaMeta, err := decodeEA(data, inst.Address, 4, mode, reg, cpu)
@@ -262,6 +279,9 @@ func decodePFLUSHR(data []byte, opcode uint16, inst *Instruction, cpu CPU) error
 }
 
 func decodePLOAD(data []byte, opcode uint16, inst *Instruction, cpu CPU, mnemonic string, word2 uint16) error {
+	if !fcSpecValid(word2&0x1F) || !eaIn(opcode, eaControlAlt) {
+		return ErrInvalidEncoding
+	}
 	fc := fcSpecOperand(word2 & 0x1F)
 	mode := uint8((opcode >> 3) & 0x7)
 	reg := uint8(opcode & 0x7)
@@ -282,6 +302,9 @@ func decodePLOAD(data []byte, opcode uint16, inst *Instruction, cpu CPU, mnemoni
 // differs from the always-valid A0 default is this decoder's one
 // necessary choice between the two equally-valid textual spellings.
 func decodePTEST(data []byte, opcode uint16, inst *Instruction, cpu CPU, mnemonic string, word2 uint16) error {
+	if !fcSpecValid(word2&0x1F) || !eaIn(opcode, eaControlAlt) {
+		return ErrInvalidEncoding
+	}
 	fc := fcSpecOperand(word2 & 0x1F)
 	level := uint32((word2 >> 10) & 0x7)
 	levelText := fmt.Sprintf("#%d", level)
@@ -310,6 +333,10 @@ func decodePTEST(data []byte, opcode uint16, inst *Instruction, cpu CPU, mnemoni
 // decodeBADBAC decodes PMOVE's BAD0-BAD7/BAC0-BAC7 forms — see the
 // badBacFamilyMask const block above for the bit layout.
 func decodeBADBAC(data []byte, opcode uint16, inst *Instruction, cpu CPU, word2 uint16) error {
+	// Only BAC (10), load (9) and the register number (4-2) vary.
+	if word2&0x09E3 != 0 || !pmoveOperandValid(opcode, 4, word2&badBacIsLoad == 0) {
+		return ErrInvalidEncoding
+	}
 	name := "BAD"
 	if word2&badBacIsBAC != 0 {
 		name = "BAC"
@@ -349,6 +376,9 @@ func decodePRESTORE(data []byte, opcode uint16, inst *Instruction, cpu CPU) erro
 }
 
 func decodePMMUSaveRestore(data []byte, opcode uint16, inst *Instruction, cpu CPU, mnemonic string) error {
+	if !saveRestoreEAValid(opcode, mnemonic == "PSAVE") {
+		return ErrInvalidEncoding
+	}
 	mode := uint8((opcode >> 3) & 0x7)
 	reg := uint8(opcode & 0x7)
 	eaText, offset, eaMeta, err := decodeEA(data, inst.Address, 2, mode, reg, cpu)
@@ -357,4 +387,23 @@ func decodePMMUSaveRestore(data []byte, opcode uint16, inst *Instruction, cpu CP
 	}
 	setInstruction(data, inst, offset, mnemonic, eaText, eaMeta)
 	return nil
+}
+
+// fcSpecValid accepts the defined function-code specifiers: SFC (00000),
+// DFC (00001), a data register (01rrr) and an immediate (10ddd).
+func fcSpecValid(v uint16) bool {
+	return v <= 1 || (v >= 0x08 && v <= 0x17)
+}
+
+// pmoveOperandValid checks PMOVE's <ea>: never an address register; the
+// 64-bit root pointers only in memory; a store needs a data alterable
+// destination.
+func pmoveOperandValid(opcode uint16, size int, store bool) bool {
+	if size == 8 {
+		return eaIn(opcode, eaMemoryAlterable)
+	}
+	if store {
+		return eaIn(opcode, eaDataAlterable)
+	}
+	return eaIn(opcode, eaData)
 }

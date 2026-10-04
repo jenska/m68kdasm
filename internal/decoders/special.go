@@ -261,3 +261,25 @@ func extractRegNum(regName string) int {
 	}
 	return -1
 }
+
+// decodeMOVEUSP decodes MOVE An,USP (0100 1110 0110 0aaa) and MOVE USP,An
+// (0100 1110 0110 1aaa).
+func decodeMOVEUSP(data []byte, opcode uint16, inst *Instruction, cpu CPU) error {
+	reg := uint8(opcode & 0x7)
+	an := registerOperand(RegisterKindAddress, reg)
+	usp := registerOperand(RegisterKindUSP, 0)
+	if opcode&0x0008 == 0 {
+		setInstruction(data, inst, 2, "MOVE.L", fmt.Sprintf("A%d, USP", reg), an, usp)
+	} else {
+		setInstruction(data, inst, 2, "MOVE.L", fmt.Sprintf("USP, A%d", reg), usp, an)
+	}
+	return nil
+}
+
+// decodeBKPT decodes BKPT #<vector> (68010+): 0100 1000 0100 1vvv.
+func decodeBKPT(data []byte, opcode uint16, inst *Instruction, cpu CPU) error {
+	vector := uint32(opcode & 0x7)
+	text := fmt.Sprintf("#%d", vector)
+	setInstruction(data, inst, 2, "BKPT", text, immediateOperand(text, vector, 1))
+	return nil
+}

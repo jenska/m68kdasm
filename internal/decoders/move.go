@@ -83,6 +83,9 @@ func decodeMOVEM(data []byte, opcode uint16, inst *Instruction, cpu CPU) error {
 	mode := uint8((opcode >> 3) & 0x7)
 	reg := uint8(opcode & 0x7)
 	regListMask := binary.BigEndian.Uint16(data[2:4])
+	if regListMask == 0 {
+		return ErrInvalidEncoding // an empty register list has no assembler syntax
+	}
 	offset := 4
 	var addrModeStr string
 	var addrModeMeta Operand
@@ -166,7 +169,10 @@ func decodeMOVES(data []byte, opcode uint16, inst *Instruction, cpu CPU) error {
 	}
 	regNum := uint8((ext >> 12) & 0x7)
 	regMeta := registerOperand(kind, regNum)
-	registerToMemory := ext&0x0800 == 0
+	if ext&0x07FF != 0 {
+		return ErrInvalidEncoding // bits 10-0 of the extension word are reserved
+	}
+	registerToMemory := ext&0x0800 != 0 // dr: 1 = register to <ea>
 
 	eaOperand, offset, eaMeta, err := decodeEAWithSize(data, inst.Address, 4, mode, reg, sizeBytes, cpu)
 	if err != nil {
@@ -186,49 +192,56 @@ func decodeMOVES(data []byte, opcode uint16, inst *Instruction, cpu CPU) error {
 	return nil
 }
 
-// controlRegisterNames maps MOVEC control-register codes to their names.
-// Not exhaustively gated by CPU (e.g. CACR is 68020+, PCR is 68060-only):
-// this is a display lookup, not a validity check, so an unrecognized or
-// CPU-inappropriate code just falls back to its raw hex form.
-var controlRegisterNames = map[uint16]string{
-	0x000: "SFC",
-	0x001: "DFC",
-	0x800: "USP",
-	0x801: "VBR",
-	0x002: "CACR",  // 68020 and later
-	0x802: "CAAR",  // 68020/68030 only
-	0x803: "MSP",   // 68020 and later
-	0x804: "ISP",   // 68020 and later
-	0x003: "TC",    // 68040 MMU
-	0x004: "ITT0",  // 68040/68060
-	0x005: "ITT1",  // 68040/68060
-	0x006: "DTT0",  // 68040/68060
-	0x007: "DTT1",  // 68040/68060
-	0x805: "MMUSR", // 68040
-	0x806: "URP",   // 68040/68060
-	0x807: "SRP",   // 68040/68060
-	0x808: "PCR",   // 68060
+// controlRegister is a MOVEC control register and the CPUs that have it
+// (MC68010/020/030/040/060 and CPU32 user's manuals).
+type controlRegister struct {
+	name string
+	cpus cpuSet
 }
 
-func controlRegisterName(code uint16) string {
-	if name, ok := controlRegisterNames[code]; ok {
-		return name
+var controlRegisters = map[uint16]controlRegister{
+	0x000: {"SFC", cpu010up},
+	0x001: {"DFC", cpu010up},
+	0x800: {"USP", cpu010up},
+	0x801: {"VBR", cpu010up},
+	0x002: {"CACR", cpu020up},
+	0x802: {"CAAR", cpu020 | cpu030},
+	0x803: {"MSP", cpu020 | cpu030 | cpu040},
+	0x804: {"ISP", cpu020 | cpu030 | cpu040},
+	0x003: {"TC", cpu040up},
+	0x004: {"ITT0", cpu040up},
+	0x005: {"ITT1", cpu040up},
+	0x006: {"DTT0", cpu040up},
+	0x007: {"DTT1", cpu040up},
+	0x008: {"BUSCR", cpu060},
+	0x805: {"MMUSR", cpu040},
+	0x806: {"URP", cpu040up},
+	0x807: {"SRP", cpu040up},
+	0x808: {"PCR", cpu060},
+}
+
+// controlRegisterName returns the name of MOVEC control register code on
+// cpu, and false if that CPU has no such register.
+func controlRegisterName(code uint16, cpu CPU) (string, bool) {
+	r, ok := controlRegisters[code]
+	if !ok || r.cpus&cpuBit(cpu) == 0 {
+		return "", false
 	}
-	return fmt.Sprintf("$%03X", code)
+	return r.name, true
 }
 
 // decodeMOVEC - Move Control Register (68010+). Two opcodes share one
 // extension-word layout: bit15=register kind, bits14-12=Rn, bits11-0=control
 // register code.
 func decodeMOVECFromControl(data []byte, opcode uint16, inst *Instruction, cpu CPU) error {
-	return decodeMOVEC(data, inst, true)
+	return decodeMOVEC(data, inst, true, cpu)
 }
 
 func decodeMOVECToControl(data []byte, opcode uint16, inst *Instruction, cpu CPU) error {
-	return decodeMOVEC(data, inst, false)
+	return decodeMOVEC(data, inst, false, cpu)
 }
 
-func decodeMOVEC(data []byte, inst *Instruction, fromControl bool) error {
+func decodeMOVEC(data []byte, inst *Instruction, fromControl bool, cpu CPU) error {
 	if err := requireLength(data, 4, "MOVEC control register"); err != nil {
 		return err
 	}
@@ -239,7 +252,11 @@ func decodeMOVEC(data []byte, inst *Instruction, fromControl bool) error {
 		kind = RegisterKindAddress
 	}
 	regMeta := registerOperand(kind, uint8((ext>>12)&0x7))
-	ccMeta := Operand{Text: controlRegisterName(ext & 0x0FFF), Kind: OperandKindRegister}
+	name, ok := controlRegisterName(ext&0x0FFF, cpu)
+	if !ok {
+		return ErrInvalidEncoding
+	}
+	ccMeta := Operand{Text: name, Kind: OperandKindRegister}
 
 	var operands string
 	var first, second Operand

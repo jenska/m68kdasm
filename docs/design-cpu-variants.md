@@ -48,12 +48,10 @@ one wildcard-size pattern per register/memory form — caught by
 `TestDecodeRegressionRawOpcodes/SUBA_long_register` in the existing test
 suite, which is exactly the kind of regression that suite exists to catch.
 
-Not fixed (out of scope even after the above): `ADDI`/`SUBI`/`ANDI`/`ORI`/
-`EORI`/`CMPI` return a hard Go error (not a `DC.W` fallback) for the reserved
-size-field value `11`, which also pre-dates this work. Left alone because
-fixing it is an error-handling design question (should a decoder's error be
-caught and converted to `DC.W` in `decodeInstruction`?) affecting every
-decoder, not a narrow opcode-table fix.
+Since resolved: `decodeInstruction` now renders any decoder error other
+than a request for more bytes as `DC.W`, and `ValidIntegerOpcode`
+(internal/decoders/validity.go) rejects encodings a CPU does not have
+before any decoder runs — see the round-trip test (roundtrip_test.go).
 
 ### Explicitly deferred (not implemented, on purpose)
 

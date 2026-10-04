@@ -100,6 +100,9 @@ const (
 	RegisterKindAddress = decoders.RegisterKindAddress
 	RegisterKindPC      = decoders.RegisterKindPC
 	RegisterKindFP      = decoders.RegisterKindFP
+	RegisterKindSR      = decoders.RegisterKindSR
+	RegisterKindCCR     = decoders.RegisterKindCCR
+	RegisterKindUSP     = decoders.RegisterKindUSP
 
 	EAKindDataRegisterDirect    = decoders.EAKindDataRegisterDirect
 	EAKindAddressRegisterDirect = decoders.EAKindAddressRegisterDirect

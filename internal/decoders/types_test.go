@@ -25,6 +25,9 @@ func TestFindDecoderMatchesOpcodeTable(t *testing.T) {
 }
 
 func findDecoderLinear(opcode uint16, cpu CPU, fpu, mmu bool) OpcodeDecoder {
+	if !ValidIntegerOpcode(opcode, cpu) {
+		return nil
+	}
 	bit := cpuBit(cpu)
 	for _, pattern := range OpcodeTable {
 		if (opcode & pattern.Mask) != pattern.Value {

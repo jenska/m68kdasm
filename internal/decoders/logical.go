@@ -13,13 +13,13 @@ func decodeEOR(data []byte, opcode uint16, inst *Instruction, cpu CPU) error {
 }
 
 func decodeANDI(data []byte, opcode uint16, inst *Instruction, cpu CPU) error {
-	return decodeImmediateBinaryOp("ANDI", data, opcode, inst, false, cpu)
+	return decodeImmediateBinaryOp("ANDI", data, opcode, inst, true, cpu)
 }
 
 func decodeORI(data []byte, opcode uint16, inst *Instruction, cpu CPU) error {
-	return decodeImmediateBinaryOp("ORI", data, opcode, inst, false, cpu)
+	return decodeImmediateBinaryOp("ORI", data, opcode, inst, true, cpu)
 }
 
 func decodeEORI(data []byte, opcode uint16, inst *Instruction, cpu CPU) error {
-	return decodeImmediateBinaryOp("EORI", data, opcode, inst, false, cpu)
+	return decodeImmediateBinaryOp("EORI", data, opcode, inst, true, cpu)
 }

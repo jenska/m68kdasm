@@ -9,8 +9,8 @@ func TestCPUOptionDefaultsToM68000(t *testing.T) {
 }
 
 func TestMOVES_RequiresCPU010OrLater(t *testing.T) {
-	// MOVES.W D0,(A1)
-	data := []byte{0x0E, 0x51, 0x00, 0x00}
+	// MOVES.W D0,(A1): extension word dr bit 11 set (register to memory)
+	data := []byte{0x0E, 0x51, 0x08, 0x00}
 
 	inst, err := DecodeWithOptions(data, 0x1000, DecodeOptions{})
 	if err != nil {

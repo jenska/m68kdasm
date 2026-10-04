@@ -9,12 +9,12 @@ import (
 // BFFFO, BFSET, BFINS. Opcode: 1110 oooo 11 mmm rrr (oooo selects the
 // instruction), followed by an extension word:
 //
-//	bit15    reserved (0)
-//	bit14    offset type: 0 = 5-bit immediate in bits 10-6, 1 = register in bits 10-8
-//	bits13-11 reserved (0)
-//	bits10-6 offset (immediate value, or register number when bit14=1)
-//	bit5     width type: 0 = 5-bit immediate in bits 4-0, 1 = register in bits 2-0
-//	bits4-0  width (immediate value — 0 means 32 — or register number when bit5=1)
+//	bit15     reserved (0)
+//	bits14-12 data register (BFEXTU/BFEXTS/BFFFO/BFINS; 0 otherwise)
+//	bit11     Do: 0 = 5-bit immediate offset in bits 10-6, 1 = register in bits 8-6
+//	bits10-6  offset (immediate value, or 00rrr when Do=1)
+//	bit5      Dw: 0 = 5-bit immediate width in bits 4-0, 1 = register in bits 2-0
+//	bits4-0   width (immediate value — 0 means 32 — or 00rrr when Dw=1)
 //
 // BFEXTU/BFEXTS/BFFFO additionally use bits14-12 of the extension word as a
 // destination data register; BFINS uses the same field as its source
@@ -33,9 +33,7 @@ func parseBitfieldExt(ext uint16) bitfieldSpec {
 	var spec bitfieldSpec
 	spec.offsetIsReg = ext&0x0800 != 0
 	if spec.offsetIsReg {
-		// Register number occupies bits 10-8 (the top 3 bits of the 5-bit
-		// offset field); bits 7-6 are unused in this case.
-		spec.offsetReg = uint8((ext >> 8) & 0x7)
+		spec.offsetReg = uint8((ext >> 6) & 0x7)
 	} else {
 		spec.offsetImm = uint8((ext >> 6) & 0x1F)
 	}
@@ -107,6 +105,9 @@ func decodeBitfield(mnemonic string, role bitfieldRegRole, data []byte, opcode u
 		return err
 	}
 	ext := binary.BigEndian.Uint16(data[2:4])
+	if !bitfieldExtValid(ext, role) {
+		return ErrInvalidEncoding
+	}
 	spec := parseBitfieldExt(ext)
 
 	eaOperand, offset, eaMeta, err := decodeEAWithSize(data, inst.Address, 4, mode, reg, 4, cpu)
@@ -134,4 +135,23 @@ func decodeBitfield(mnemonic string, role bitfieldRegRole, data []byte, opcode u
 
 	setInstruction(data, inst, offset, mnemonic, operandsText, operands...)
 	return nil
+}
+
+// bitfieldExtValid checks the reserved bits of a bit-field extension word:
+// bit 15, the register field for the instructions without a register
+// operand, and the upper two bits of a register-specified offset or width.
+func bitfieldExtValid(ext uint16, role bitfieldRegRole) bool {
+	if ext&0x8000 != 0 {
+		return false
+	}
+	if role == bitfieldNoReg && ext&0x7000 != 0 {
+		return false
+	}
+	if ext&0x0800 != 0 && ext&0x0600 != 0 {
+		return false
+	}
+	if ext&0x0020 != 0 && ext&0x0018 != 0 {
+		return false
+	}
+	return true
 }

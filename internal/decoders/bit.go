@@ -36,11 +36,14 @@ func decodeBitset(mn string, data []byte, opcode uint16, inst *Instruction, cpu 
 			return err
 		}
 		bitNum := binary.BigEndian.Uint16(data[offset : offset+2])
+		if bitNum&0xFF00 != 0 {
+			return ErrInvalidEncoding // the bit number's upper byte is reserved
+		}
 		bitNumStr = fmt.Sprintf("#%d", bitNum&0xFF)
 		offset += 2
 		bitOperand = immediateOperand(bitNumStr, uint32(bitNum&0xFF), 1)
 	}
-	operand, offset, eaMeta, err := decodeEA(data, inst.Address, offset, mode, reg, cpu)
+	operand, offset, eaMeta, err := decodeEAWithSize(data, inst.Address, offset, mode, reg, 1, cpu)
 	if err != nil {
 		return err
 	}

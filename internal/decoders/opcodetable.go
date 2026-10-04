@@ -24,6 +24,7 @@ const (
 	maskFB80 = 0xFB80
 	maskF0C0 = 0xF0C0
 	maskF0F8 = 0xF0F8
+	maskF0FF = 0xF0FF
 	maskF138 = 0xF138
 	maskFFE0 = 0xFFE0 // FBcc: 5-bit condition field in bits 4-0
 )
@@ -62,11 +63,11 @@ const (
 	valDIVU = 0x80C0
 	valDIVS = 0x81C0
 
-	// bit op values (register form)
-	valBTSTReg = 0x0500
-	valBCHGReg = 0x0540
-	valBCLRReg = 0x0580
-	valBSETReg = 0x05C0
+	// bit op values (register form): 0000 rrr1 tt eeeeee, any Dn in rrr
+	valBTSTReg = 0x0100
+	valBCHGReg = 0x0140
+	valBCLRReg = 0x0180
+	valBSETReg = 0x01C0
 
 	// bit op values (immediate form)
 	valBTSTImm = 0x0800
@@ -102,17 +103,19 @@ const (
 	valAND = 0xC000
 	valADD = 0xD000
 
-	valUNLK  = 0x4E58
-	valLINK  = 0x4E50
-	valLINKL = 0x4808 // 68020+
-	valEXT   = 0x4880
-	valEXTL  = 0x48C0
-	valEXTB  = 0x49C0 // 68020+
-	valCHK   = 0x4180
-	valCHKL  = 0x4100 // 68020+
-	valEXGDD = 0xC140 // must precede AND below
-	valEXGAA = 0xC148
-	valEXGDA = 0xC188
+	valMOVEUSP = 0x4E60
+	valBKPT    = 0x4848 // 68010+, the An slot of PEA
+	valUNLK    = 0x4E58
+	valLINK    = 0x4E50
+	valLINKL   = 0x4808 // 68020+
+	valEXT     = 0x4880
+	valEXTL    = 0x48C0
+	valEXTB    = 0x49C0 // 68020+
+	valCHK     = 0x4180
+	valCHKL    = 0x4100 // 68020+
+	valEXGDD   = 0xC140 // must precede AND below
+	valEXGAA   = 0xC148
+	valEXGDA   = 0xC188
 
 	valMOVECFromCtl = 0x4E7A // 68010+
 	valMOVECToCtl   = 0x4E7B // 68010+
@@ -144,6 +147,8 @@ const (
 	valCASB    = 0x0AC0
 	valCASW    = 0x0CC0
 	valCASL    = 0x0EC0
+	valCAS2W   = 0x0CFC
+	valCAS2L   = 0x0EFC
 
 	// ADDX/SUBX need the size field (bits7-6) fixed exactly, like ADDQ/SUBQ:
 	// bits8-6=111 (i.e. size "11") is reserved for ADDA/SUBA/CMPA, not a
@@ -225,14 +230,16 @@ const (
 	valFSAVE    = 0xF300
 	valFRESTORE = 0xF340
 
-	valBFTST  = 0xE0C0
-	valBFEXTU = 0xE1C0
-	valBFCHG  = 0xE2C0
-	valBFEXTS = 0xE3C0
-	valBFCLR  = 0xE4C0
-	valBFFFO  = 0xE5C0
-	valBFSET  = 0xE6C0
-	valBFINS  = 0xE7C0
+	// Bit fields: 1110 1ttt 11 eeeeee — bit 11 set distinguishes them from
+	// the memory shifts and rotates (1110 0ttd 11 eeeeee).
+	valBFTST  = 0xE8C0
+	valBFEXTU = 0xE9C0
+	valBFCHG  = 0xEAC0
+	valBFEXTS = 0xEBC0
+	valBFCLR  = 0xECC0
+	valBFFFO  = 0xEDC0
+	valBFSET  = 0xEEC0
+	valBFINS  = 0xEFC0
 	valSHIFT  = 0xE000
 )
 
@@ -313,22 +320,24 @@ func mmuMaskedCPU(mask, value uint16, decoder OpcodeDecoder, cpus cpuSet) Opcode
 var opcodeBuckets = [16][]OpcodePattern{
 	0x0: {
 		masked(maskF138, valMOVEP, decodeMOVEP),
-		maskedCPU(maskFFF8, valRTMDn, decodeRTM, cpu020_030),
-		maskedCPU(maskFFF8, valRTMAn, decodeRTM, cpu020_030),
-		maskedCPU(maskFFC0, valCALLM, decodeCALLM, cpu020_030),
-		maskedCPU(maskFFC0, valCHK2B, decodeCHK2CMP2, cpu020up),
-		maskedCPU(maskFFC0, valCHK2W, decodeCHK2CMP2, cpu020up),
-		maskedCPU(maskFFC0, valCHK2L, decodeCHK2CMP2, cpu020up),
+		maskedCPU(maskFFF8, valRTMDn, decodeRTM, cpu020),
+		maskedCPU(maskFFF8, valRTMAn, decodeRTM, cpu020),
+		maskedCPU(maskFFC0, valCALLM, decodeCALLM, cpu020),
+		maskedCPU(maskFFC0, valCHK2B, decodeCHK2CMP2, cpu32up),
+		maskedCPU(maskFFC0, valCHK2W, decodeCHK2CMP2, cpu32up),
+		maskedCPU(maskFFC0, valCHK2L, decodeCHK2CMP2, cpu32up),
+		exactCPU(valCAS2W, decodeCAS2, cpu020up), // must precede CAS's immediate slot
+		exactCPU(valCAS2L, decodeCAS2, cpu020up),
 		maskedCPU(maskFFC0, valCASB, decodeCAS, cpu020up),
 		maskedCPU(maskFFC0, valCASW, decodeCAS, cpu020up),
 		maskedCPU(maskFFC0, valCASL, decodeCAS, cpu020up),
-		masked(maskFFC0, valBTSTReg, decodeBTST),
+		masked(maskF1C0, valBTSTReg, decodeBTST),
 		masked(maskFFC0, valBTSTImm, decodeBTST),
-		masked(maskFFC0, valBCHGReg, decodeBCHG),
+		masked(maskF1C0, valBCHGReg, decodeBCHG),
 		masked(maskFFC0, valBCHGImm, decodeBCHG),
-		masked(maskFFC0, valBCLRReg, decodeBCLR),
+		masked(maskF1C0, valBCLRReg, decodeBCLR),
 		masked(maskFFC0, valBCLRImm, decodeBCLR),
-		masked(maskFFC0, valBSETReg, decodeBSET),
+		masked(maskF1C0, valBSETReg, decodeBSET),
 		masked(maskFFC0, valBSETImm, decodeBSET),
 		masked(maskFF00, valADDI, decodeADDI),
 		masked(maskFF00, valSUBI, decodeSUBI),
@@ -360,17 +369,17 @@ var opcodeBuckets = [16][]OpcodePattern{
 		exactCPU(valMOVECToCtl, decodeMOVECToControl, cpu010up),
 		exactCPU(valBGND, decodeBGND, cpu32),
 		exact(valILLEGAL, decodeILLEGAL),
-		maskedCPU(maskFFC0, valMULLong, decodeMULLong, cpu020up),
-		maskedCPU(maskFFC0, valDIVLong, decodeDIVLong, cpu020up),
+		maskedCPU(maskFFC0, valMULLong, decodeMULLong, cpu32up),
+		maskedCPU(maskFFC0, valDIVLong, decodeDIVLong, cpu32up),
 		masked(maskFFF0, valTRAP, decodeTRAP),
 		masked(maskFFF8, valUNLK, decodeUNLK),
 		masked(maskFFF8, valLINK, decodeLINK),
-		maskedCPU(maskFFF8, valLINKL, decodeLINKLong, cpu020up),
+		maskedCPU(maskFFF8, valLINKL, decodeLINKLong, cpu32up),
 		masked(maskFFF8, valEXT, decodeEXT),
 		masked(maskFFF8, valEXTL, decodeEXT),
-		maskedCPU(maskFFF8, valEXTB, decodeEXTB, cpu020up),
+		maskedCPU(maskFFF8, valEXTB, decodeEXTB, cpu32up),
 		masked(maskF1C0, valCHK, decodeCHK),
-		maskedCPU(maskF1C0, valCHKL, decodeCHK, cpu020up),
+		maskedCPU(maskF1C0, valCHKL, decodeCHK, cpu32up),
 		masked(maskFB80, valMOVEMReg, decodeMOVEM),
 		masked(maskFB80, valMOVEMMem, decodeMOVEM),
 		masked(maskFF00, valCLR, decodeCLR),
@@ -383,6 +392,8 @@ var opcodeBuckets = [16][]OpcodePattern{
 		masked(maskFFC0, valJSR, decodeJSR),
 		masked(maskFFC0, valJMP, decodeJMP),
 		masked(maskF1C0, valLEA, decodeLEA),
+		masked(maskFFF0, valMOVEUSP, decodeMOVEUSP),
+		maskedCPU(maskFFF8, valBKPT, decodeBKPT, cpu010up),
 		masked(maskFFF8, valPEA, decodeSWAP),
 		masked(maskFFC0, valPEA, decodePEA),
 	},
@@ -394,7 +405,11 @@ var opcodeBuckets = [16][]OpcodePattern{
 		masked(maskF1C0, valSUBQW, decodeSUBQ),
 		masked(maskF1C0, valSUBQL, decodeSUBQ),
 		masked(maskF0F8, valDBcc, decodeDBcc),
-		maskedCPU(maskF0F8, valTRAPcc, decodeTRAPcc, cpu020up),
+		// TRAPcc takes Scc's mode-7 slots 2-4 (.W, .L, no operand); slots
+		// 0 and 1 stay Scc's absolute addresses.
+		maskedCPU(maskF0FF, valTRAPcc|2, decodeTRAPcc, cpu32up),
+		maskedCPU(maskF0FF, valTRAPcc|3, decodeTRAPcc, cpu32up),
+		maskedCPU(maskF0FF, valTRAPcc|4, decodeTRAPcc, cpu32up),
 		masked(maskF0C0, valScc, decodeScc),
 	},
 	0x6: {
@@ -453,24 +468,27 @@ var opcodeBuckets = [16][]OpcodePattern{
 		masked(maskF000, valSHIFT, decodeShiftRotate), // All ASL/ASR/LSL/LSR/ROL/ROR/ROXL/ROXR
 	},
 	0xF: {
+		// The coprocessor-interface PMMU (68851 on a 68020, on-chip on the
+		// 68030); the 68040/68060 have their own single-word MMU forms
+		// below instead.
 		// PMMU: word1 0xF000-0xF03F, disjoint from every FPU pattern below
 		// (all of which start at 0xF200+), so ordering relative to them
 		// doesn't matter.
-		mmuMasked(maskFFC0, valPMOVE, decodePMMUGeneral),
-		mmuMasked(maskFFC0, valPSAVE, decodePSAVE),
-		mmuMasked(maskFFC0, valPRESTORE, decodePRESTORE),
+		mmuMaskedCPU(maskFFC0, valPMOVE, decodePMMUGeneral, cpu020_030),
+		mmuMaskedCPU(maskFFC0, valPSAVE, decodePSAVE, cpu020_030),
+		mmuMaskedCPU(maskFFC0, valPRESTORE, decodePRESTORE, cpu020_030),
 
 		// valPDBcc and the three valPTRAPcc literals must precede valPScc:
 		// same EA-sub-slot precedence shape as valFDBcc/valFTRAPcc ahead
 		// of valFScc just below (and integer DBcc/TRAPcc ahead of Scc in
 		// bucket 0x5).
-		mmuMasked(maskFFF8, valPDBcc, decodePDBcc),
-		mmuExact(valPTRAPccNil, decodePTRAPccBare),
-		mmuExact(valPTRAPccW, decodePTRAPccWord),
-		mmuExact(valPTRAPccL, decodePTRAPccLong),
-		mmuMasked(maskFFC0, valPScc, decodePScc),
-		mmuMasked(maskFFF0, valPBccW, decodePBcc),
-		mmuMasked(maskFFF0, valPBccL, decodePBcc),
+		mmuMaskedCPU(maskFFF8, valPDBcc, decodePDBcc, cpu020_030),
+		mmuExactCPU(valPTRAPccNil, decodePTRAPccBare, cpu020_030),
+		mmuExactCPU(valPTRAPccW, decodePTRAPccWord, cpu020_030),
+		mmuExactCPU(valPTRAPccL, decodePTRAPccLong, cpu020_030),
+		mmuMaskedCPU(maskFFC0, valPScc, decodePScc, cpu020_030),
+		mmuMaskedCPU(maskFFF0, valPBccW, decodePBcc, cpu020_030),
+		mmuMaskedCPU(maskFFF0, valPBccL, decodePBcc, cpu020_030),
 
 		// 68040's own single-word PMMU forms — disjoint word1 range
 		// (0xF500-0xF56F) from every PMMU/FPU pattern above and below, so
@@ -510,6 +528,9 @@ var OpcodeTable = flattenOpcodeBuckets()
 // are valid on the given target CPU, and (for coprocessor patterns) are enabled
 // by the fpu/mmu capability flags.
 func FindDecoder(opcode uint16, cpu CPU, fpu, mmu bool) OpcodeDecoder {
+	if !ValidIntegerOpcode(opcode, cpu) {
+		return nil
+	}
 	bit := cpuBit(cpu)
 	for _, pattern := range opcodeBuckets[opcode>>12] {
 		if (opcode & pattern.Mask) != pattern.Value {

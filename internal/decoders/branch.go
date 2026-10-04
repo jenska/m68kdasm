@@ -120,16 +120,16 @@ func decodeTRAPcc(data []byte, opcode uint16, inst *Instruction, cpu CPU) error 
 		}
 		imm := uint32(binary.BigEndian.Uint16(data[2:4]))
 		immText := fmt.Sprintf("#%s", formatImmediate(imm, 2))
-		setInstruction(data, inst, 4, mnemonic, immText, immediateOperand(immText, imm, 2))
+		setInstruction(data, inst, 4, mnemonic+".W", immText, immediateOperand(immText, imm, 2))
 	case 0x3: // long operand
 		if err := requireLength(data, 6, mnemonic+" long operand"); err != nil {
 			return err
 		}
 		imm := binary.BigEndian.Uint32(data[2:6])
 		immText := fmt.Sprintf("#%s", formatImmediate(imm, 4))
-		setInstruction(data, inst, 6, mnemonic, immText, immediateOperand(immText, imm, 4))
+		setInstruction(data, inst, 6, mnemonic+".L", immText, immediateOperand(immText, imm, 4))
 	default:
-		return fmt.Errorf("unknown %s operand selector: %d", mnemonic, opcode&0x7)
+		return ErrInvalidEncoding
 	}
 	return nil
 }

@@ -117,7 +117,7 @@ func decodeAddressingMode(data []byte, mode, reg uint8, operandSize int, cpu CPU
 			}
 			addr := int16(binary.BigEndian.Uint16(data[:2]))
 			absolute := uint32(int32(addr))
-			text := fmt.Sprintf("$%04X", uint16(addr))
+			text := fmt.Sprintf("$%04X.W", uint16(addr))
 			return text, 1, effectiveAddressOperand(text, EffectiveAddress{
 				Kind:            EAKindAbsoluteShort,
 				Mode:            mode,

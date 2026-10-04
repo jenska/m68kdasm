@@ -325,7 +325,13 @@ func decodeFPGeneric(data []byte, opcode uint16, inst *Instruction, cpu CPU) err
 	// code is ever interpreted as one. Cross-checked against m68kasm's
 	// defFMOVECR (cpu020_fpu_cond.go).
 	if word2&0xFC00 == 0x5C00 {
+		if opcode&0x3F != 0 {
+			return ErrInvalidEncoding // FMOVECR has no <ea>
+		}
 		return decodeFMOVECR(data, inst, word2)
+	}
+	if word2&fpRMBit == 0 && (opcode&0x3F != 0 || word2&fpDirBit != 0) {
+		return ErrInvalidEncoding // register-to-register: no <ea>, no direction
 	}
 
 	// FSINCOS's opmode literal is 0x30, but unlike every fpGeneralOps
@@ -379,6 +385,9 @@ func decodeFPGeneric(data []byte, opcode uint16, inst *Instruction, cpu CPU) err
 }
 
 func decodeFPRegToReg(data []byte, inst *Instruction, op fpOpInfo, word2 uint16) error {
+	if !op.hasDst && word2&0x0380 != 0 {
+		return ErrInvalidEncoding // FTST has no destination register
+	}
 	srcMeta := registerOperand(RegisterKindFP, uint8((word2>>10)&0x7))
 	mnemonic := op.mnemonic + ".X"
 	if !op.hasDst {
@@ -397,6 +406,12 @@ func decodeFPLoad(data []byte, opcode uint16, inst *Instruction, cpu CPU, op fpO
 		return fmt.Errorf("reserved FPU data format code: %d", fmtCode)
 	}
 
+	if word2&fpDirBit != 0 || !fpOperandValid(opcode, fmtCode, false) {
+		return ErrInvalidEncoding
+	}
+	if !op.hasDst && word2&0x0380 != 0 {
+		return ErrInvalidEncoding // FTST has no destination register
+	}
 	mode := uint8((opcode >> 3) & 0x7)
 	reg := uint8(opcode & 0x7)
 	srcOperand, offset, srcMeta, err := decodeFPEAWithSize(data, inst.Address, 4, mode, reg, fmtCode, cpu)
@@ -424,6 +439,9 @@ func decodeFPStore(data []byte, opcode uint16, inst *Instruction, cpu CPU, word2
 		return fmt.Errorf("reserved FPU data format code: %d", fmtCode)
 	}
 
+	if !fpOperandValid(opcode, fmtCode, true) || word2&0x007F != 0 {
+		return ErrInvalidEncoding
+	}
 	mode := uint8((opcode >> 3) & 0x7)
 	reg := uint8(opcode & 0x7)
 	dstOperand, offset, dstMeta, err := decodeFPEAWithSize(data, inst.Address, 4, mode, reg, fmtCode, cpu)
@@ -480,6 +498,9 @@ func decodeFSINCOS(data []byte, opcode uint16, inst *Instruction, cpu CPU, word2
 	if info.bytes == 0 {
 		return fmt.Errorf("reserved FPU data format code: %d", fmtCode)
 	}
+	if word2&fpDirBit != 0 || !fpOperandValid(opcode, fmtCode, false) {
+		return ErrInvalidEncoding
+	}
 	mode := uint8((opcode >> 3) & 0x7)
 	reg := uint8(opcode & 0x7)
 	srcOperand, offset, srcMeta, err := decodeFPEAWithSize(data, inst.Address, 4, mode, reg, fmtCode, cpu)
@@ -500,6 +521,15 @@ func decodeFSINCOS(data []byte, opcode uint16, inst *Instruction, cpu CPU, word2
 // own syntax, e.g. "FMOVE.P FP3,BUFFER{#-5}" or "...{D2}" — not a separate
 // operand.
 func decodeFMOVEPStore(data []byte, opcode uint16, inst *Instruction, cpu CPU, word2 uint16) error {
+	if !eaIn(opcode, eaMemoryAlterable) {
+		return ErrInvalidEncoding // a packed decimal needs memory
+	}
+	if word2&0x1000 != 0 && word2&0x008F != 0 {
+		return ErrInvalidEncoding // dynamic k-factor: Dn in bits 6-4, the rest reserved
+	}
+	if k := int8(word2<<1) >> 1; word2&0x1000 == 0 && k > 17 {
+		return ErrInvalidEncoding // a static k-factor runs from -64 to +17
+	}
 	mode := uint8((opcode >> 3) & 0x7)
 	reg := uint8(opcode & 0x7)
 	dstOperand, offset, dstMeta, err := decodeFPEAWithSize(data, inst.Address, 4, mode, reg, 3, cpu)
@@ -547,6 +577,9 @@ const (
 )
 
 func decodeFMOVEM(data []byte, opcode uint16, inst *Instruction, cpu CPU, word2 uint16) error {
+	if !fmovemValid(opcode, word2) {
+		return ErrInvalidEncoding
+	}
 	mode := uint8((opcode >> 3) & 0x7)
 	reg := uint8(opcode & 0x7)
 
@@ -773,6 +806,9 @@ func decodeFRESTORE(data []byte, opcode uint16, inst *Instruction, cpu CPU) erro
 }
 
 func decodeFSaveRestore(data []byte, opcode uint16, inst *Instruction, cpu CPU, mnemonic string) error {
+	if !saveRestoreEAValid(opcode, mnemonic == "FSAVE") {
+		return ErrInvalidEncoding
+	}
 	mode := uint8((opcode >> 3) & 0x7)
 	reg := uint8(opcode & 0x7)
 	eaText, offset, eaMeta, err := decodeEA(data, inst.Address, 2, mode, reg, cpu)
@@ -781,4 +817,74 @@ func decodeFSaveRestore(data []byte, opcode uint16, inst *Instruction, cpu CPU, 
 	}
 	setInstruction(data, inst, offset, mnemonic, eaText, eaMeta)
 	return nil
+}
+
+// fpOperandValid checks an FPU <ea> operand in a given data format: memory
+// or, for the formats a data register can hold (long, single, word, byte),
+// a data register; an immediate only as a source. An address register is
+// never an FPU operand.
+func fpOperandValid(opcode uint16, fmtCode uint16, store bool) bool {
+	set := eaData
+	if store {
+		set = eaDataAlterable
+	}
+	if !eaIn(opcode, set) {
+		return false
+	}
+	if (opcode>>3)&7 == 0 {
+		switch fmtCode {
+		case 0, 1, 4, 6: // L, S, W, B
+			return true
+		}
+		return false
+	}
+	return true
+}
+
+// fmovemValid checks FMOVEM's command word and operand. Control registers:
+// 10 dr sss 0000000000 with a non-empty selection; a data register only for
+// a single register, an address register only for FPIAR alone. Data
+// registers: 11 dr mm 000 list, loading from a control address or (An)+
+// (mm = 1x) and storing to a control alterable address (mm = 1x) or -(An)
+// (mm = 0x); a dynamic list names its Dn in bits 6-4.
+func fmovemValid(opcode, word2 uint16) bool {
+	mode := (opcode >> 3) & 7
+	switch word2 & fpMovemClassMask {
+	case fpMovemCtrlLoad, fpMovemCtrlStore:
+		sel := (word2 & fpMovemCtrlSelect) >> 10
+		if sel == 0 || word2&0x03FF != 0 {
+			return false
+		}
+		single := sel == 1 || sel == 2 || sel == 4
+		switch mode {
+		case 0:
+			return single
+		case 1:
+			return sel == 1 // FPIAR
+		}
+		if word2&fpMovemClassMask == fpMovemCtrlStore {
+			return eaIn(opcode, eaMemoryAlterable)
+		}
+		return eaIn(opcode, eaMemory)
+	case fpMovemFPnLoad, fpMovemFPnStore:
+		if word2&0x0700 != 0 {
+			return false
+		}
+		if word2&fpMovemDynBit != 0 {
+			if word2&0x008F != 0 {
+				return false
+			}
+		} else if word2&0x00FF == 0 {
+			return false // an empty register list
+		}
+		predec := word2&fpMovemPredecBit == 0
+		if word2&fpMovemClassMask == fpMovemFPnLoad {
+			return !predec && eaIn(opcode, eaControl|eaPostInc)
+		}
+		if predec {
+			return mode == 4
+		}
+		return eaIn(opcode, eaControlAlt)
+	}
+	return false
 }
