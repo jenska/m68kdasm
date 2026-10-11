@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.4.1] - 2026-10-11
+
+### Fixed
+
+- `FMOVEM` register lists used the integer `MOVEM` masks. The FPU's
+  control and postincrement mask has FP0 in bit 7 and the predecrement
+  mask has it in bit 0 (MAME's m68kfpu.cpp fmovem tests `0x80 >> i` and
+  `1 << i`). The round-trip tests use m68kasm v1.6.3, which encodes them
+  the same way
+
 ## [1.4.0] - 2026-10-04
 
 The disassembler now matches m68kasm v1.6: a new round-trip test decodes

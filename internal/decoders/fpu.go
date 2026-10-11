@@ -571,7 +571,7 @@ const (
 	fpMovemCtrlStore  = 0xA000 // FPCR/FPSR/FPIAR-list,<ea>
 	fpMovemFPnLoad    = 0xC000 // <ea>,FPn-list (word2 top nibble 0xD)
 	fpMovemFPnStore   = 0xE000 // FPn-list,<ea> (word2 top nibble 0xE or 0xF)
-	fpMovemPredecBit  = 0x1000 // FPn-store only: 0 = -(An) (reversed list), 1 = general memory
+	fpMovemPredecBit  = 0x1000 // FPn-store only: 0 = -(An) (FP0 in bit 0), 1 = general memory (FP0 in bit 7)
 	fpMovemDynBit     = 0x0800 // FPn forms only: dynamic Dn-specified list instead of a static mask
 	fpMovemCtrlSelect = 0x1C00 // control-register forms: 3-bit mask at bits 12-10
 )
@@ -614,7 +614,8 @@ func decodeFMOVEM(data []byte, opcode uint16, inst *Instruction, cpu CPU, word2 
 			setInstruction(data, inst, offset, "FMOVEM.X", eaText+", "+dMeta.Text, eaMeta, dMeta)
 			return nil
 		}
-		listText, regs := formatFPRegisterList(word2&0xFF, false)
+		// Loads use the control/postincrement mask: FP0 in bit 7.
+		listText, regs := formatFPRegisterList(word2&0xFF, true)
 		listMeta := registerListOperand(listText, regs)
 		setInstruction(data, inst, offset, "FMOVEM.X", eaText+", "+listText, eaMeta, listMeta)
 		return nil
@@ -630,7 +631,7 @@ func decodeFMOVEM(data []byte, opcode uint16, inst *Instruction, cpu CPU, word2 
 			setInstruction(data, inst, offset, "FMOVEM.X", dMeta.Text+", "+eaText, dMeta, eaMeta)
 			return nil
 		}
-		listText, regs := formatFPRegisterList(word2&0xFF, predecrement)
+		listText, regs := formatFPRegisterList(word2&0xFF, !predecrement)
 		listMeta := registerListOperand(listText, regs)
 		setInstruction(data, inst, offset, "FMOVEM.X", listText+", "+eaText, listMeta, eaMeta)
 		return nil
@@ -661,11 +662,10 @@ func formatFPCtrlRegList(mask uint8) (string, []string) {
 	return strings.Join(names, "/"), names
 }
 
-// formatFPRegisterList mirrors formatRegisterList (special.go) for FMOVEM's
-// 8-bit FP0-FP7 mask: reverse selects the bit-reflected order integer
-// MOVEM's -(An) predecrement form also uses (see formatRegisterList's own
-// "reverse" parameter), here over 8 bits instead of 16 since there is no
-// second (address-register) half to a FPn list.
+// formatFPRegisterList renders FMOVEM's 8-bit FP0-FP7 mask. Unlike integer
+// MOVEM, the FPU reverses the mask for the control and postincrement modes
+// (reverse set: FP0 in bit 7) and not for predecrement (FP0 in bit 0), as
+// MAME's m68kfpu.cpp fmovem tests 0x80 >> i and 1 << i.
 func formatFPRegisterList(mask uint16, reverse bool) (string, []string) {
 	bitFor := func(listIndex int) uint {
 		if reverse {
