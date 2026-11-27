@@ -117,35 +117,33 @@ const (
 )
 
 // PTESTR/PTESTW word2: base literal (bit 9 = R/W direction) | function-code
-// specifier (bits 4-0) | #level (bits 12-10) | optional result register An
-// (bits 7-5). Bits 15-13 and 9-8 are the only bits none of those three
-// fields ever touch (An's value 0-7 only reaches bits 7-5, never 9-8), so
-// they're what identifies this word2 shape regardless of level/An/FC
-// values — mask 0xE300. Cross-checked against m68kasm's newPTestDef.
+// specifier (bits 4-0) | #level (bits 12-10) | A bit (bit 8: load the
+// result register) | result register An (bits 7-5, zero when A is clear).
+// Bits 15-13 and 9 identify this word2 shape regardless of the other
+// fields — mask 0xE200. Cross-checked against m68kasm's newPTestDef
+// (v1.6.4 and later, which set the A bit).
 const (
-	ptestClassMask = 0xE300
+	ptestClassMask = 0xE200
 	ptestrBase     = 0x8200
 	ptestwBase     = 0x8000
+	ptestABit      = 0x0100
 )
 
-// BAD0-BAD7/BAC0-BAC7 (breakpoint address/access registers) are the last
-// PMOVE-movable registers, and genuinely different in shape from every
-// other one: a register NUMBER (0-7) at bits 4-2 rather than a fixed
-// selector, AND an INVERTED load/store direction bit relative to every
-// other PMOVE register — bit 9 set means LOAD here (every other register's
-// word2, per pmmuMoveWord2 above, uses 0x0200/bit9 for STORE). Confirmed
-// against m68kasm's own newPmmuNumberedReg literals (cpu030_pmmu_badbac.go)
-// before coding, given the inverted-bit convention is exactly the kind of
-// easy-to-transpose detail that caused real bugs earlier in this sequence
-// (see docs/design-fpu-mmu.md's FMOVEM/FMOVE.P entries).
+// BAD0-BAD7/BAC0-BAC7 (the MC68851's breakpoint address/control
+// registers) are the last PMOVE-movable registers, and differ in shape
+// from every other one: a register NUMBER (0-7) at bits 4-2 rather than a
+// fixed selector. They are 16-bit registers, and bit 9 is the direction
+// bit as for every other PMOVE register: set stores to <ea> (MC68851
+// User's Manual, PMOVE format 2). GAS's opcode table has the direction
+// reversed and a long operand; m68kasm followed it until v1.6.5.
 //
-//	BADn load  = 0x7200 | (n<<2)   BADn store = 0x7000 | (n<<2)
-//	BACn load  = 0x7600 | (n<<2)   BACn store = 0x7400 | (n<<2)
+//	BADn load  = 0x7000 | (n<<2)   BADn store = 0x7200 | (n<<2)
+//	BACn load  = 0x7400 | (n<<2)   BACn store = 0x7600 | (n<<2)
 const (
 	badBacFamilyMask = 0xF000
 	badBacFamilyBase = 0x7000
 	badBacIsBAC      = 0x0400 // bit 10: 0 = BAD, 1 = BAC
-	badBacIsLoad     = 0x0200 // bit 9: 1 = load (<ea>,REGn) — inverted, see above
+	badBacIsStore    = 0x0200 // bit 9: 1 = store (REGn,<ea>)
 )
 
 // decodePMMUGeneral decodes every PMMU instruction sharing the bare
@@ -294,15 +292,16 @@ func decodePLOAD(data []byte, opcode uint16, inst *Instruction, cpu CPU, mnemoni
 }
 
 // decodePTEST renders PTESTR/PTESTW's optional trailing result-register
-// operand (bits 7-5) only when nonzero. Real hardware has no separate
-// "An present" flag distinct from the register value itself, so "...,
-// #level" and "...,#level,A0" are bit-identical — an inherent, not
-// decoder-side, ambiguity (m68kasm's own encoder produces the same bytes
-// for both source spellings). Showing the trailing operand only when it
-// differs from the always-valid A0 default is this decoder's one
-// necessary choice between the two equally-valid textual spellings.
+// operand: the A bit (bit 8) says the MMU loads An (bits 7-5) with the
+// address of the last descriptor fetched. With A clear the register field
+// must be zero.
 func decodePTEST(data []byte, opcode uint16, inst *Instruction, cpu CPU, mnemonic string, word2 uint16) error {
 	if !fcSpecValid(word2&0x1F) || !eaIn(opcode, eaControlAlt) {
+		return ErrInvalidEncoding
+	}
+	hasAn := word2&ptestABit != 0
+	anReg := uint8((word2 >> 5) & 0x7)
+	if !hasAn && anReg != 0 {
 		return ErrInvalidEncoding
 	}
 	fc := fcSpecOperand(word2 & 0x1F)
@@ -317,8 +316,7 @@ func decodePTEST(data []byte, opcode uint16, inst *Instruction, cpu CPU, mnemoni
 		return err
 	}
 
-	anReg := uint8((word2 >> 5) & 0x7)
-	if anReg == 0 {
+	if !hasAn {
 		operands := fc.Text + ", " + eaText + ", " + levelText
 		setInstruction(data, inst, offset, mnemonic, operands, fc, eaMeta, levelMeta)
 		return nil
@@ -333,8 +331,9 @@ func decodePTEST(data []byte, opcode uint16, inst *Instruction, cpu CPU, mnemoni
 // decodeBADBAC decodes PMOVE's BAD0-BAD7/BAC0-BAC7 forms — see the
 // badBacFamilyMask const block above for the bit layout.
 func decodeBADBAC(data []byte, opcode uint16, inst *Instruction, cpu CPU, word2 uint16) error {
-	// Only BAC (10), load (9) and the register number (4-2) vary.
-	if word2&0x09E3 != 0 || !pmoveOperandValid(opcode, 4, word2&badBacIsLoad == 0) {
+	// Only BAC (10), store (9) and the register number (4-2) vary.
+	isStore := word2&badBacIsStore != 0
+	if word2&0x09E3 != 0 || !pmoveOperandValid(opcode, 2, isStore) {
 		return ErrInvalidEncoding
 	}
 	name := "BAD"
@@ -346,16 +345,16 @@ func decodeBADBAC(data []byte, opcode uint16, inst *Instruction, cpu CPU, word2 
 
 	mode := uint8((opcode >> 3) & 0x7)
 	reg := uint8(opcode & 0x7)
-	eaText, offset, eaMeta, err := decodeEAWithSize(data, inst.Address, 4, mode, reg, 4, cpu)
+	eaText, offset, eaMeta, err := decodeEAWithSize(data, inst.Address, 4, mode, reg, 2, cpu)
 	if err != nil {
 		return err
 	}
 
-	if word2&badBacIsLoad != 0 {
-		setInstruction(data, inst, offset, "PMOVE.L", eaText+", "+regMeta.Text, eaMeta, regMeta)
+	if isStore {
+		setInstruction(data, inst, offset, "PMOVE.W", regMeta.Text+", "+eaText, regMeta, eaMeta)
 		return nil
 	}
-	setInstruction(data, inst, offset, "PMOVE.L", regMeta.Text+", "+eaText, regMeta, eaMeta)
+	setInstruction(data, inst, offset, "PMOVE.W", eaText+", "+regMeta.Text, eaMeta, regMeta)
 	return nil
 }
 

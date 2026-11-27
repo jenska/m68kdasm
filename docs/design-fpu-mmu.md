@@ -343,18 +343,16 @@ code is verified against the datasheet.
    code specifier" operand (`SFC`/`DFC`/a `Dn`/an immediate — a 2-bit mode + 3-bit value field at word2
    bits 4-0, `fcSpecOperand` in `pmmu.go`), `PFLUSH`/`PFLUSHS`'s optional trailing `<ea>` (two word2
    sub-variants each, distinguished by a class mask), and `PTESTR`/`PTESTW`'s optional trailing `An`
-   result register — rendered only when nonzero, since real hardware has no separate "An present" flag
-   distinct from the register value itself, so `PTESTR FC,<ea>,#level` and `...,#level,A0` are
-   bit-identical (an inherent ambiguity, not a decoder gap — m68kasm's own encoder produces the same
-   bytes for both spellings). All 19 test cases passed round-trip on the first try, including every
-   FC-spec spelling across every instruction family and both the omitted/explicit trailing-`An` cases.
+   result register. *Correction (m68kasm v1.6.4):* this first rendered `An` only when nonzero, on the
+   belief that hardware has no "An present" flag. It does: the A bit (word2 bit 8) tells the MMU to load
+   `An`, and with A clear the register field must be zero. m68kasm left the A bit out before v1.6.4;
+   both now set it, so `...,#level` and `...,#level,A0` are distinct encodings.
    ~~`BAD0`-`BAD7`/`BAC0`-`BAC7`~~ (breakpoint address/access registers) — also done: a numbered-register
    shape (register number 0-7 at bits 4-2, `decodeBADBAC` in `pmmu.go`) distinct from every other `PMOVE`
-   register, with an inverted load/store direction bit relative to them (bit 9 set means *load* here,
-   not store — every other `PMOVE` register uses that bit the other way around). Traced m68kasm's own
-   `cpu030_pmmu_badbac.go` bit math by hand before coding, given the inverted-bit convention is exactly
-   the kind of easy-to-transpose detail that bit past bugs in this sequence — all 6 test cases passed
-   round-trip on the first try, confirming the hand derivation held up. This completes `PMOVE`'s entire
+   register. *Correction (m68kasm v1.6.5):* these first decoded as long registers with bit 9 set meaning
+   *load*, following GAS's opcode table via m68kasm. Per the MC68851 User's Manual (PMOVE format 2)
+   they are 16-bit (`PMOVE.W`) and bit 9 set stores to `<ea>`, as for every other `PMOVE` register.
+   This completes `PMOVE`'s entire
    register set. ~~`PSAVE`/`PRESTORE`~~ — also done, exactly as quick as predicted: structurally
    identical to `FSAVE`/`FRESTORE` (single-word, no coprocessor command word2, `-(An)`-only/
    `(An)+`-only — `decodePSAVE`/`decodePRESTORE` in `pmmu.go`), the one difference being PMMU's word1

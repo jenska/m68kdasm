@@ -99,6 +99,7 @@ func TestPFlushLoadTestRoundTrip(t *testing.T) {
 		"PTESTR D1, (A0), #3",
 		"PTESTR #2, (A0), #3",
 		"PTESTR SFC, (A0), #3, A5",
+		"PTESTR SFC, (A0), #3, A0",
 		"PTESTW SFC, (A0), #4",
 		"PTESTW SFC, (A0), #4, A2",
 	}
@@ -124,17 +125,16 @@ func TestPFlushLoadTestRoundTrip(t *testing.T) {
 }
 
 // TestBADBACRoundTrip covers PMOVE's BAD0-BAD7/BAC0-BAC7 forms — a
-// numbered-register shape distinct from every other PMOVE register, with
-// an inverted load/store direction bit — see decodeBADBAC in
-// internal/decoders/pmmu.go.
+// numbered-register shape distinct from every other PMOVE register, and
+// 16 bits wide — see decodeBADBAC in internal/decoders/pmmu.go.
 func TestBADBACRoundTrip(t *testing.T) {
 	testCases := []string{
-		"PMOVE.L (A0), BAD0",
-		"PMOVE.L (A0), BAD7",
-		"PMOVE.L BAD3, (A0)",
-		"PMOVE.L (A0), BAC0",
-		"PMOVE.L (A0), BAC7",
-		"PMOVE.L BAC5, (A0)",
+		"PMOVE.W (A0), BAD0",
+		"PMOVE.W (A0), BAD7",
+		"PMOVE.W BAD3, (A0)",
+		"PMOVE.W (A0), BAC0",
+		"PMOVE.W (A0), BAC7",
+		"PMOVE.W BAC5, (A0)",
 	}
 	for _, source := range testCases {
 		t.Run(source, func(t *testing.T) {

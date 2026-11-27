@@ -74,7 +74,7 @@ This ensures syntax fidelity. New decoders **must be tested this way**—add tes
 
 ## Integration: m68kasm Dependency
 
-[go.mod](go.mod) depends on `github.com/jenska/m68kasm v1.1.4` (assembler). In tests, use `m68kasm.AssembleString()` to validate disassembler output. Decoder syntax must align with that assembler's output format.
+[go.mod](go.mod) depends on `github.com/jenska/m68kasm v1.6.7` (assembler). In tests, use `m68kasm.AssembleString()` to validate disassembler output. Decoder syntax must align with that assembler's output format.
 
 ## Build & Test Workflow
 

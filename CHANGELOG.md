@@ -7,6 +7,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.4.2] - 2026-11-27
+
+### Changed
+
+- The round-trip tests use m68kasm v1.6.7. CI uses `actions/checkout@v7`
+  and `actions/setup-go@v7`.
+
+### Fixed
+
+- `FDBcc` and `PDBcc` computed the branch target from the instruction word
+  plus two instead of from the displacement word, which follows the
+  condition word (MC68020 User's Manual 7.2.2.3.2); targets were two bytes
+  off
+- `PTESTR`/`PTESTW` ignored the A bit (bit 8) of the command word and showed
+  the result register whenever the register field was nonzero. The A bit
+  now selects the `An` operand (so `A0` shows), and a nonzero register
+  field with A clear renders as `DC.W`
+- `PMOVE` to and from `BAD0`-`BAD7`/`BAC0`-`BAC7` decoded as `PMOVE.L` with
+  the direction reversed. They are 16-bit registers and bit 9 set stores to
+  `<ea>`, as for every other `PMOVE` register (MC68851 User's Manual)
+
 ## [1.4.1] - 2026-10-11
 
 ### Fixed

@@ -213,7 +213,10 @@ func decodeFBcc(data []byte, opcode uint16, inst *Instruction, cpu CPU) error {
 
 // decodeFDBcc mirrors decodeDBcc (branch.go), except the condition lives in
 // a dedicated, fully-fixed word2 (0x0000-0x001F) rather than in the opcode
-// word's own bits — word1 only carries the Dn register (bits 2-0).
+// word's own bits — word1 only carries the Dn register (bits 2-0). The
+// displacement counts from the displacement word itself (instruction + 4),
+// which follows the condition word (MC68020 User's Manual 7.2.2.3.2), so
+// branchTarget gets the address of the condition word.
 func decodeFDBcc(data []byte, opcode uint16, inst *Instruction, cpu CPU) error {
 	if err := requireLength(data, 6, "FDBcc"); err != nil {
 		return err
@@ -223,7 +226,7 @@ func decodeFDBcc(data []byte, opcode uint16, inst *Instruction, cpu CPU) error {
 	mnemonic := "FDB" + fpConditionName(cc)
 	reg := uint8(opcode & 0x7)
 	disp := int32(int16(binary.BigEndian.Uint16(data[4:6])))
-	target := branchTarget(inst.Address, disp)
+	target := branchTarget(inst.Address+2, disp)
 	targetText := formatBranchTarget(target)
 	regMeta := registerOperand(RegisterKindData, reg)
 	setInstruction(data, inst, 6, mnemonic, regMeta.Text+", "+targetText, regMeta, branchOperand(targetText, target))

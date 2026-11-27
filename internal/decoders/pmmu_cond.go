@@ -65,7 +65,8 @@ func decodePBcc(data []byte, opcode uint16, inst *Instruction, cpu CPU) error {
 
 // decodePDBcc mirrors decodeFDBcc (fpu.go): word1 only carries the Dn
 // register (bits 2-0); the condition lives in a dedicated, fully-fixed
-// word2 (0x0000-0x000F).
+// word2 (0x0000-0x000F). As with FDBcc, the displacement counts from the
+// displacement word (instruction + 4).
 func decodePDBcc(data []byte, opcode uint16, inst *Instruction, cpu CPU) error {
 	if err := requireLength(data, 6, "PDBcc"); err != nil {
 		return err
@@ -78,7 +79,7 @@ func decodePDBcc(data []byte, opcode uint16, inst *Instruction, cpu CPU) error {
 	mnemonic := "PDB" + pmmuConditionName(cc)
 	reg := uint8(opcode & 0x7)
 	disp := int32(int16(binary.BigEndian.Uint16(data[4:6])))
-	target := branchTarget(inst.Address, disp)
+	target := branchTarget(inst.Address+2, disp)
 	targetText := formatBranchTarget(target)
 	regMeta := registerOperand(RegisterKindData, reg)
 	setInstruction(data, inst, 6, mnemonic, regMeta.Text+", "+targetText, regMeta, branchOperand(targetText, target))
